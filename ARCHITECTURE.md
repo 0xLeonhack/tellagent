@@ -1,295 +1,643 @@
 # ARCHITECTURE
 
-技术设计。总览见 [README.md](README.md)。
+tellagent 的技术设计。产品定位见 [README.md](README.md)。
 
 ---
 
-## 一、四条设计决定（先读这节）
+## 一、六条设计原则
 
-这一节是整个项目最容易被做错的地方。后面所有细节都服从这四条。
+### 原则一：代码计算，Jev 判断
 
-### 决定一：代码做对齐和 diff，Jev 只做判断
-
-**不要让 Jev 去比较两段文字。**
-
-理由很具体：Jev 的实测弱项**就是**字面匹配、计数、逐字对比。问它"这两段哪里不一样"，正好打在它最弱的地方。TypeSafe 自己的文档也建议计算留在代码里。
-
-正确的分工：
-
-```
-代码负责：抓取 · 剥 HTML · 切段落 · 算相似度 · 对齐 · 算出精确的 diff
-Jev 负责：拿到「变化前 / 变化后 / 精确 diff」，只回答「这个变化重不重要」
+```text
+代码负责：采集 · 去重 · 时间对齐 · 窗口计算 · 百分位 · 异常检测 · 结果评估
+Jev 负责：状态判断 · 证据关系 · 显著性 · 研究优先级
+LLM 负责：基于固定证据撰写短摘要
 ```
 
-**一句话：代码做确定性的事，Jev 做语义的事。**
+收益率、波动率、相关性、百分位和变化点都是确定性计算，不能交给模型。
 
-### 决定二：Jev 只做排序，不做判定
+### 原则二：让 Jev 持续看，而不是偶尔看
 
-Jev 的整体准确率是 **67.8%**（对比前沿模型的 74.1%），而且实测出现过**连续 10 次选错、置信度还超过 80%** 的情况。
+Jev 快、便宜、输出结构化概率，它最适合做持续判断层。
 
-所以它**永远不能下结论**。架构必须是：
+每 5 分钟生成一份紧凑的 `MarketStateFrame`，BTC 和 ETH 各调用一次 Jev。系统保存每个问题的完整概率，而不只保存最终选项，由此形成 `JudgmentStream`。
 
-```
-Jev 判断 → 得到概率 → 设阈值 → ┬ 高置信度 → 自动归入待读列表
-                                └ 低置信度 → 升级给人或更强的模型
-```
+事件触发依据不只是“本次答案是什么”，还包括：
 
-它回答的是「**你该先读哪一条**」，不是「**这条是不是真的**」。
+- 概率在短时间内显著跃迁
+- 某种状态连续多帧维持高概率
+- 两种互斥解释同时升高
+- Jev 判断与确定性 detector 发生冲突
+- 判断置信度持续下降
 
-这条一破，整个系统就站不住了——**漏掉的那一条，比没有工具更糟，因为你信了它。**
+昂贵的 investigator 只在事件越过 policy 时运行。
 
-### 决定三：廉价判断 gate 昂贵行动
+### 原则三：原始观测不可变，修订产生新版本
 
-Jev 便宜到可以全量、持续地跑；agent 昂贵所以必须稀有。
+系统必须保存“当时看到了什么”。同一来源对历史值的修订不能覆盖旧值，只能创建新 revision。
 
-```
-perceive + judge   每一条都过        ← 便宜，永远开着
-        ↓ 阈值
-act               只有越线时才发生    ← 昂贵，几乎不醒
-```
+所有判断都记录原始观测、特征定义、detector、问题集、模型与 policy 的版本。
 
-### 决定四：阈值必须能「一键放行」
+### 原则四：事件来自证据关系，不来自单指标阈值
 
-判断错了的时候，拦错了比不拦更讨人厌。所以每一次叫醒都要：
+单指标异常只是 `Anomaly`。只有多个异常形成支持、反向或缺失关系，或者 JudgmentStream 本身发生状态转换后，才能生成 `MarketEvent`。
 
-- 说清楚**依据**（哪一段、改了什么）
-- 能**一键忽略**，并且忽略后同类不再重复打扰
+### 原则五：每个结论可证伪、可复盘
+
+研究摘要必须给出支持证据、反向证据、缺失证据、数据限制和失效条件。事件在未来固定 horizon 自动复盘，失败样本不得删除。
+
+### 原则六：研究与执行隔离
+
+系统不保存交易权限，不提供下单工具，也不把研究优先级自动翻译成仓位建议。
 
 ---
 
-## 二、数据源
+## 二、系统边界
 
-已核实，全免费、无需 API key。
+### 首版资产
 
-```bash
-# 1. ticker → CIK 映射
-https://www.sec.gov/files/company_tickers.json
+- BTC
+- ETH
+- ETH/BTC 相对关系
 
-# 2. 公司的文件索引
-#    ⚠️ CIK 必须补零到 10 位，否则 404 —— 最常见的静默失败
-https://data.sec.gov/submissions/CIK0000320193.json
+### 数据域
 
-# 3. 全文检索（备用）
-#    ⚠️ LATEST 必须大写，小写 404
-https://efts.sec.gov/LATEST/search-index?q=...&forms=10-K&ciks=0000320193
+| 数据域 | 首选来源 | 首版指标 |
+|---|---|---|
+| 现货 | Coinbase | OHLCV、trade、bid/ask |
+| 永续与期货 | Deribit | mark、index、funding、open interest、volume、basis |
+| Bitcoin 链上 | Bitcoin Core | block、mempool、fee、difficulty |
+| Ethereum 链上 | Execution/Beacon API | block、gas、base fee、blob、validator 状态 |
 
-# 4. 文件正文
-#    ⚠️ 这里的 CIK 不补零，accession 去掉横杠
-https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dash}/{primary_document}
-```
+链上数据放在阶段 3。阶段 0–2 先证明现货、衍生品与持续判断流有价值。
 
-**两条硬性要求：**
+### 非目标
 
-| 要求 | 细节 |
-|---|---|
-| `User-Agent` | 必须带应用名 + 邮箱，例如 `tellagent contact@example.com`。**这是 SEC 唯一的鉴权方式**，裸 curl / 默认 requests 头直接 403 |
-| 限速 | **10 请求/秒/IP**，要串行 + 120–500ms 间隔 + 429/503 退避。超了会被临时封 |
-
-**其他要点：**
-
-- `submissions` 的 `filings.recent` 是**列式存储**——每个字段是一个数组，下标 `i` 拼成一条记录
-- 全文检索分页上限 10,000 条
-- 响应是 Elasticsearch 信封，`hits.hits` 是结果，`_id` 形如 `{accession}:{filename}`
+- 毫秒级或盘口级高频策略
+- 全币种扫描器
+- 钱包地址标签平台
+- 新闻聚合和社交情绪
+- 自动交易与组合管理
+- 无证据的价格方向预测
 
 ---
 
-## 三、流水线
+## 三、总体架构
 
-### 阶段 1 · ticker → CIK → 找到两期文件
-
-```
-portfolio.txt → company_tickers.json → CIK
-             → submissions JSON → 筛 form == "10-K"，按 filingDate 取最近两期
-```
-
-注意 `submissions.recent` 只覆盖最近约一年或 1000 条，更早的需要读它给出的分片文件。
-
-### 阶段 2 · 抓正文并抽出可比章节
-
-```
-下载 primary_document (HTML) → 剥标签 → 取纯文本 → 定位 "Item 1A. Risk Factors"
-```
-
-**这是最脏的一步。** 10-K 正文可能是 inline XBRL、巨型嵌套表格、几 MB。
-
-对策：
-- 先用 1–2 家公司把这条路打通，别一上来通吃
-- Item 1A 用正则匹配标题，准备 2–3 级 fallback（"Risk Factors" 无编号、全大写、带 HTML 标签包裹）
-- 抽不出来就**明确报错**，不要静默返回空——静默失败会让后面的判断全部失真
-
-**为什么只做 Risk Factors：** 章节边界清晰、跨期结构稳定、内容天然是"公司对自己的担忧"，是全文里信噪比最高的地方。
-
-### 阶段 3 · 跨期对齐（纯代码）
-
-```
-旧期段落 A[]  ─┐
-新期段落 B[]  ─┴→ 每段 embedding → 对 B 中每段找 A 中最相似的一段
-                                  相似度 < 阈值 → 标为「候选变化」
-                                  A 中没被匹配上的 → 标为「删除」
+```text
+                         ┌─────────────────────┐
+Coinbase ─┐              │ immutable raw store │
+Deribit  ─┼→ collectors ─┤ observations        │
+BTC node ─┤              │ source revisions    │
+ETH node ─┘              └──────────┬──────────┘
+                                    ▼
+                          normalization + QA
+                                    ▼
+                        feature engine + baseline
+                                    ▼
+                           MarketStateFrame
+                              ┌─────┴─────┐
+                              ▼           ▼
+                    deterministic       Jev continuous
+                       detectors         judgment
+                              └─────┬─────┘
+                                    ▼
+                       evidence graph + event builder
+                                    ▼
+                     policy ────────┬───────────┐
+                                    ▼           ▼
+                              investigator    silent log
+                                    ▼
+                           inbox / daily brief
+                                    ▼
+                      6h / 24h / 7d outcome review
+                                    ▼
+                           calibration reports
 ```
 
-- embedding 用本地模型即可（sentence-transformers 一类），不需要 API
-- **相似度阈值是超参数，要调**：太低则噪音爆炸，太高则漏掉真实变化。用决定四的"一键忽略"反馈来校准
-- 段落对齐天然容忍**重新排序**，比按位置硬比稳健得多
-
-### 阶段 4 · 算精确 diff
-
-对每个候选对，用代码算出**真正的字符级/词级差异**，作为下一步的输入。
-
-**这一步不能省。** 它是决定一的落地——把"哪里变了"这个确定性问题用代码解决掉，让 Jev 只看结果。
-
-### 阶段 5 · Jev 判断（每个候选一次调用，并行问完）
-
-输入：`{章节, 变化前, 变化后, 精确 diff}`
-输出：见下节
+首版使用模块化单体。采集进程与分析 worker 可以独立运行，但共享同一代码库、数据库和 schema，不拆微服务。
 
 ---
 
-## 四、Jev 的问题集
+## 四、核心数据模型
 
-一次调用并行返回多个答案——这是它的强项，要用满。
+### `Observation`
 
+不可变的原始观测。
+
+```text
+id
+asset                 BTC | ETH | ETH/BTC
+source                coinbase | deribit | bitcoin_core | ethereum
+instrument
+metric
+value
+source_time
+available_time        系统首次可以看到它的时间
+received_time
+revision
+quality_flags[]
+payload_ref
+collector_version
 ```
-1. 实质性   choice: [真实变化, 仅措辞调整, 仅数字更新, 仅格式/顺序]
-2. 类别     choice: [供应链, 监管, 诉讼, 财务, 竞争, 网络安全, 人力, 宏观, 其他]
-3. 风险方向 choice: [上升, 下降, 中性]
-4. 重要性   score:  1–10
-5. 紧急度   choice: [今天, 本周, 不急]
+
+`source_time` 与 `available_time` 必须分开。历史回放只能读取 `available_time <= replay_time` 的数据。
+
+### `Feature`
+
+```text
+id
+asset
+feature_name
+window
+value
+as_of
+observation_ids[]
+definition_version
+quality_flags[]
 ```
 
-**第 1 题是整个产品成败所在。**
+### `MarketStateFrame`
 
-一份 10-K 跨年会有 **40–60 段**文字变化，其中绝大多数是噪音（换了措辞、更新了数字、调了顺序）。这道过滤器把它从 50 压到 5。**没有它，这个工具就是个噪音发生器。**
+Jev 每次看到的完整、紧凑、可重放状态。
 
-**实现注意：**
+```text
+id
+asset
+as_of
+price_state
+spot_state
+leverage_state
+volatility_state
+cross_asset_state
+onchain_state
+anomalies[]
+missing_inputs[]
+quality_summary
+feature_ids[]
+schema_version
+```
 
-- 输入里**带上精确 diff**，不要只给两段原文——这是决定一
-- 类别选项要**穷举且互斥**。Jev 无法发明选项之外的答案，所以选项设计得好不好直接决定输出质量
-- 不要问它算数、日期、字面匹配类的问题
+Frame 只包含归一化数值、方向、历史百分位和必要说明，不包含长时间序列。
+
+### `ContinuousJudgment`
+
+```text
+frame_id
+question_id
+selected_value
+probabilities
+confidence
+latency_ms
+input_tokens
+estimated_cost
+provider
+model_version
+question_set_version
+created_at
+```
+
+连续判断是一级数据资产，必须像行情一样可查询和回放。
+
+### `Anomaly`
+
+```text
+feature_id
+detector
+direction
+severity
+historical_percentile
+robust_zscore
+started_at
+persistence
+baseline_version
+```
+
+### `MarketEvent`
+
+```text
+id
+asset
+event_type
+opened_at
+updated_at
+status                open | developing | resolved | invalidated
+anomaly_ids[]
+judgment_ids[]
+supporting_evidence[]
+contradicting_evidence[]
+missing_evidence[]
+quality_summary
+snapshot_id
+```
+
+### `OutcomeReview`
+
+```text
+event_id
+horizon               6h | 24h | 7d
+reviewed_at
+realized_return
+realized_volatility
+max_adverse_move
+max_favorable_move
+oi_change
+funding_change
+event_persisted
+event_invalidated
+review_version
+```
 
 ---
 
-## 五、阈值与叫醒
+## 五、采集与数据质量
 
+### Provider 接口
+
+```python
+class MarketDataProvider(Protocol):
+    def fetch_backfill(self, request: BackfillRequest) -> list[RawRecord]: ...
+    def fetch_incremental(self, cursor: Cursor) -> FetchResult: ...
+    def health(self) -> ProviderHealth: ...
 ```
-重要性 >= 阈值  →  叫醒 agent
-重要性 <  阈值  →  记入日志，保持静默
+
+业务代码不能依赖 Coinbase 或 Deribit 的原始字段名。provider 只负责保真抓取并转换为统一 Observation。
+
+### 幂等与补数
+
+幂等键至少包含：
+
+```text
+source + instrument + metric + source_time + revision
 ```
 
-阈值不是拍脑袋定的，用三个阶段校准：
+采集器必须处理重复消息、WebSocket 断线、REST 补数、时间戳乱序、延迟到达、历史修订和空窗口。
 
-1. **冷启动**：先设一个偏保守的高阈值，宁可漏也不要吵
-2. **人工校验**：跑一批真实文件，人工标哪些该叫醒，看阈值卡在哪
-3. **上线反馈**：用户"一键忽略"的样本回灌，调整阈值和类别权重
+缺失值不做静默前向填充。每次填充都必须成为显式 Feature，并携带质量标记。
+
+### 数据质量门
+
+以下情况禁止产生高优先级事件：
+
+- 关键来源在窗口内缺失
+- 现货与衍生品时钟偏差超过阈值
+- 单一交易所出现无法交叉验证的极值
+- 回补数据在事件时间之后才可用
+- 指标定义或合约规格发生变化
 
 ---
 
-## 六、agent 调查循环
+## 六、特征引擎
 
-**这是整个项目里唯一真正 agentic 的部分，也是唯一不能省的部分。**
+首版只使用易解释、可回放的特征。
 
-### 它要回答的问题
+### 价格与现货
 
-> **这个变化是只有这家公司在说，还是整个行业都在说？**
+- log return：5m、1h、6h、24h、7d
+- realized volatility：6h、24h、7d
+- volume change 与历史百分位
+- bid/ask spread
+- spot volume share
+- BTC/ETH return correlation
+- ETH/BTC relative strength
 
-全行业都在写 → 宏观噪音，降级。
-只有这一家在写 → 公司特有信号，升级。
+### 衍生品
 
-**今天没人回答这个问题**，因为回答它意味着要读十家同行的同一章节。
+- open interest change：1h、6h、24h
+- funding 当前值、变化和历史百分位
+- perpetual premium
+- annualized futures basis
+- derivatives volume / spot volume
+- price 与 OI 的联合状态
 
-### 工具集（严格有界）
+### 链上（阶段 3）
 
+BTC：
+
+- mempool size 与 fee pressure
+- mean block interval
+- difficulty 与 hash-rate proxy
+- transaction count / volume 的稳健变化
+
+ETH：
+
+- gas used 与 base fee
+- burn 与净发行
+- blob gas 与 blob usage
+- validator entry / exit 状态
+- staking deposit / withdrawal
+
+### 基线
+
+每个特征至少维护 30 天与 180 天滚动分布、同一 UTC 小时的季节性基线、median/MAD、percentile 和数据覆盖率。
+
+均值和标准差可以作为辅助，但不应成为厚尾市场的唯一异常依据。
+
+---
+
+## 七、Jev 持续判断层
+
+### 调用节奏
+
+默认每 5 分钟、每个资产调用一次。两种资产每天最多产生 576 次常规调用。BTC 与 ETH 的问题可以共享 schema，但输入状态独立。
+
+实际成本、延迟和限流必须通过 telemetry 测量，不能只依赖供应商标价。系统设置每日调用预算；预算不足时自动降频到 15 分钟，但不丢失确定性特征和 detector。
+
+### 问题集
+
+每个问题独立判断，代码组合概率：
+
+```text
+market_stress         Score: calm / watch / stressed / extreme
+leverage_dominance    Noul: 当前变化是否主要由衍生品杠杆驱动
+spot_confirmation     Score: absent / weak / partial / strong
+signal_conflict       Score: aligned / mixed / conflicting / sharply_conflicting
+state_persistence     Choice: transient / developing / persistent / unclear
+research_priority     Score: background / monitor / investigate_now
 ```
-fetch_filing(ticker, form, period)     拉某公司的某期文件
-read_section(ticker, period, "Item 1A") 读指定章节
-（可选）search_peers(ticker, topic)      找同行业公司
+
+问题使用带语义锚点的等级，不使用无定义的 1–10 分。
+
+### 判断流特征
+
+事件引擎对 JudgmentStream 再做确定性计算：
+
+- probability delta：1 帧、3 帧、12 帧
+- probability EWMA
+- 连续越线帧数
+- 状态翻转次数
+- confidence trend
+- Jev 与 rule-based detector 的 disagreement
+
+单次高概率不直接叫醒 investigator。至少满足“跃迁、持续、冲突”之一，并通过数据质量门。
+
+### Provider 抽象
+
+```python
+class JudgmentProvider(Protocol):
+    def judge(self, frame: MarketStateFrame) -> list[ContinuousJudgment]: ...
 ```
 
-**只有 2–3 个，不做开放式 agent。** 24 小时里做不透更复杂的东西。
+实现至少包括：
+
+- `JevProvider`
+- `RuleBasedProvider`
+- `RecordedProvider`，用于可重复测试
+- 可选通用 LLM baseline
+
+Jev 处于 early-access 阶段，架构不能把它变成不可替换的基础设施。
+
+---
+
+## 八、事件检测
+
+### 1. 杠杆驱动上涨或下跌
+
+```text
+价格显著变化
++ OI 同方向快速增长
++ funding / premium 进入极端区间
++ derivatives volume 增长快于 spot
++ leverage_dominance 概率持续升高
+```
+
+反向证据：现货成交同步显著扩大。
+
+### 2. 去杠杆
+
+```text
+价格快速变化
++ OI 明显下降
++ funding 回归中性或反转
+```
+
+### 3. 现货与衍生品背离
+
+spot 与 perpetual 的成交、价格或基差不同步，且 signal_conflict 持续升高。
+
+### 4. 波动率扩张
+
+短窗口 realized volatility 穿越长期高百分位并得到成交量确认。期权接入后增加 implied / realized divergence。
+
+### 5. BTC/ETH 分化
+
+ETH/BTC 异常变化，同时 BTC、ETH 自身趋势或波动结构不同。
+
+### 6. 链上与市场背离
+
+价格或杠杆显著变化，但链上使用、费用或资金活动没有确认。
+
+detector 只产生事实与证据关系，不产生“应该买入/卖出”的结论。
+
+---
+
+## 九、证据图与事件生命周期
+
+```text
+Observation → Feature → Anomaly ───────────┐
+                                           ▼
+MarketStateFrame → ContinuousJudgment → MarketEvent
+                                           ↑
+                              supports | contradicts | missing
+```
+
+事件不是每 5 分钟重复创建。相同资产、类型和方向在冷却窗口内合并更新：
+
+```text
+open → developing → resolved
+                  ↘ invalidated
+```
+
+事件更新时保存新 snapshot，历史 snapshot 不覆盖。
+
+---
+
+## 十、策略与 investigator
+
+### PolicyEngine
+
+PolicyEngine 综合以下信息决定动作：
+
+- research priority 的概率及变化速度
+- materiality 和 persistence
+- 数据完整度
+- 事件是否首次出现或继续发展
+- 用户的提醒预算
+- 同类事件最近的误报率
+
+低优先级事件仍然保存，只是不主动通知。后台保持高召回，前台用 Top-K 和通知预算控制噪音。
+
+### Investigator 工具
+
+```text
+read_event(event_id)
+read_evidence(event_id, snapshot_id)
+compare_history(event_type, asset, window)
+read_judgment_stream(question_id, asset, range)
+read_metric(metric, asset, range)
+```
+
+investigator 不直接访问开放网页，不临时寻找新闻原因，也不修改证据。
 
 ### 输出契约
 
-- 必须**逐条引用**来源（哪个 ticker、哪期、哪一段）
-- 输出是**给人看的备忘**，不是自动动作
-- 结论必须显式回答"行业性 vs 公司特有"
+```text
+标题
+事实摘要
+当前判断
+支持证据
+反向证据
+缺失证据
+数据限制
+失效条件
+来源与时间
+```
 
-### 为什么这一段值钱
-
-它把「一条线索」变成「一个结论」，而且这个结论**只有 agent 能拿到**——因为它是多步的、要跨公司取数的、要综合的。
+每个自然语言断言必须引用一个 evidence ID。无法引用的句子不能进入最终摘要。
 
 ---
 
-## 七、成本与性能（量级估算）
+## 十一、自动复盘
 
-以 5 个持仓、每家公司两期 10-K 计：
+`OutcomeReviewer` 在事件开始后的 6h、24h 和 7d 运行。它不判定“预测涨跌是否正确”，而是评价原始命题。
 
-| 项 | 量级 |
+| 事件 | 主要评价问题 |
 |---|---|
-| 文件数 | 10 份 |
-| 总段落数 | ~4,000 |
-| 进入 Jev 的候选段落 | ~400 |
-| 耗时（8 并发 × ~0.5s） | **~25 秒** |
-| **判断成本** | **~$0.03** |
+| 杠杆拥挤 | OI/funding 是否继续极端，是否发生去杠杆 |
+| 去杠杆 | OI 是否完成收缩，波动是否恢复 |
+| 波动扩张 | 后续实现波动率是否保持高位 |
+| 跨资产分化 | ETH/BTC 分化是否持续或均值回归 |
+| 链上背离 | 链上证据是否后来确认市场变化 |
 
-> "读完 10 份年报，比对 4,000 个段落，找出 6 处真实变化，花了三分钱。"
+聚合报告按资产、事件类型和市场状态展示样本数、持续率、失效率、结果分布及平均最大有利/不利变动。
 
-**这个数量级本身就是论点。** 同样的全量审查用前沿模型做，成本高两个数量级——那才是"只能抽样"的根本原因。
-
----
-
-## 八、风险
-
-按严重程度排序。
-
-### 风险 1（最高）：Jev 在这个任务上准不准，完全没被验证过
-
-这是整个项目唯一的真风险。没有证据表明它判"文件变化是否实质性"能判准，而且**步骤/段落级判断的要求比文档分类更高**。
-
-**所以这个项目的正片内容是测它：**
-
-- 手标 50 处真实变化（跨 2–3 家公司，含明显噪音和明显信号）
-- 让它跑，统计一致率、以及**假阴性**（真变化被判成噪音）
-- 报告时同时给出**在什么阈值下、召回多少、精确多少**
-
-**这份测量结果比 demo 本身更能拿奖。** 评委见过太多说"AI 判断很准"的队伍，没见过带着可信度数字来的。
-
-**假阴性是最危险的错误类型**：漏掉真实变化的代价，远大于多报几条噪音。阈值校准要偏向高召回。
-
-### 风险 2：10-K 正文解析脆弱
-
-inline XBRL、巨型表格、格式年年微调。**对策：先做透一家公司，别通吃表单类型；抽不到章节要显式报错。**
-
-### 风险 3：demo 里的后见之明偏见
-
-"这家公司一年前就提示了风险，后来果然发生了"——听起来很猛，但敏锐的评委会问有没有系统性回测。
-
-**安全说法**："这个信号一直在公开文件里，只是没人读得起。" 不声称预测能力。
-
-### 风险 4：合规与措辞
-
-**绝不能说投资建议。** 评委里若有金融/法律背景，"建议关注""值得买入"这类表述能直接让项目出局。定位必须是**信息分诊 / 注意力分配**。
-
-### 风险 5：调查 agent 会跑偏或幻觉
-
-**对策**：工具严格有界（2–3 个）、强制引用、输出是备忘而非动作。演示时第一次调查要预热，否则 10–60 秒的延迟会拖垮节奏。
+结果不能只保留成功事件。
 
 ---
 
-## 九、未决问题
+## 十二、存储与运行
 
-- [ ] 章节范围：只做 Risk Factors，还是加 MD&A？（先只做前者）
-- [ ] 对齐阈值定多少？（需要靠手标数据校准）
-- [ ] 叫醒阈值定多少？（同上）
-- [ ] 同行集合怎么定义：按 SIC 行业码，还是手工指定可比公司？（SIC 免费且现成，先用它）
-- [ ] 10-Q 要不要一起做？（季频变化更快，但篇幅和格式更不稳定）
+### 首版技术栈
+
+- Python 3.12+
+- PostgreSQL + TimescaleDB；本地开发允许 DuckDB
+- Parquet 保存批量原始数据与回放快照
+- Pydantic 定义跨模块契约
+- Polars 进行批量特征计算
+- APScheduler 或简单 worker loop 调度
+- Typer 构建 CLI
+
+不在首版引入 Kafka、微服务或 Kubernetes。
+
+### CLI 草案
+
+```console
+tell collect --source coinbase --asset BTC --asset ETH
+tell backfill --from 2025-01-01 --to 2026-01-01
+tell observe --at 2026-09-26T00:00:00Z
+tell inbox --since 24h
+tell show <event-id>
+tell replay --from 2026-01-01 --to 2026-06-30
+tell evaluate --horizon 24h
+```
+
+所有命令都支持固定 `--as-of`，保证可重复运行。
 
 ---
 
-## 十、技术栈（待定）
+## 十三、评估
 
-尚未选定。倾向：
+### 数据层
 
-- **语言**：Python（EDGAR 生态、embedding、HTML 解析的库最全）
-- **embedding**：本地 sentence-transformers，不引入 API 依赖
-- **判断**：Jev（`Choice` / `Score` / `Nool` 三个原语刚好够用）
-- **入口**：命令行优先，界面最后再说
+- Observation 完整率、重复率和延迟
+- 补数成功率
+- 跨来源时间偏差
+- Point-in-Time 回放一致性
+
+### 连续判断层
+
+- 每日调用次数、成本、P50/P95 延迟和失败率
+- 相同 Frame 重试的一致性
+- 普通时期概率稳定性
+- 已知事件前后的概率变化
+- Jev 相对 RuleBasedProvider 和通用模型的增益
+
+### 事件层
+
+- 已知重大行情召回率与提前量
+- 普通时期每周事件数量
+- 事件合并准确率
+- 人工研究优先级的 Recall@K / NDCG
+
+### 产品层
+
+- 用户标记“值得研究”的比例
+- 提醒后查看证据的比例
+- mute / dismiss 比例
+- 每周节省的研究时间
+
+### 投资研究层
+
+只有前述指标通过后，才进行策略评估：
+
+- walk-forward 和完全样本外测试
+- 严禁使用 `available_time` 之后的数据
+- 计入手续费、滑点和资金费率
+- 与 buy-and-hold 及简单波动率策略比较
+- 同时报告收益、最大回撤、Sharpe、换手率和样本数
+
+---
+
+## 十四、主要风险
+
+### 风险 1：持续调用只制造昂贵噪音
+
+对策：记录每次调用的成本与边际信息增益；比较 5m、15m、1h 三种频率。若 5m 判断流没有更早发现状态变化，就自动降频。
+
+### 风险 2：把 Jev 概率误当真实概率
+
+对策：在自己的 BTC/ETH 历史样本上做校准；概率只参与排序和状态转换，不直接映射交易动作。
+
+### 风险 3：做成普通行情摘要
+
+对策：没有证据关系、反向证据和失效条件的输出不得成为 MarketEvent。
+
+### 风险 4：回测泄漏
+
+对策：使用 `available_time`、不可变 revision 和 snapshot；回放只能读取当时可见数据。
+
+### 风险 5：单一来源异常
+
+对策：数据质量门、provider health 和交叉来源确认；无法确认时明确降级。
+
+### 风险 6：过拟合历史行情
+
+对策：少量易解释 detector、walk-forward、锁定最终测试区间、报告所有失败样本。
+
+### 风险 7：AI 编造因果
+
+对策：investigator 只能读取内部证据，逐句引用，禁止开放式新闻归因。
+
+### 风险 8：模型供应商依赖
+
+对策：JudgmentProvider 抽象、规则基线、缓存与 RecordedProvider。
+
+---
+
+## 十五、实施顺序
+
+1. 定义 schema、时间语义和 raw snapshot。
+2. 接入 Coinbase、Deribit，并完成历史 backfill。
+3. 建立数据质量报告和 Point-in-Time replay。
+4. 实现特征引擎及 RuleBasedProvider。
+5. 生成 MarketStateFrame，跑通 Jev 每 5 分钟持续判断。
+6. 测量成本、延迟、稳定性，并比较 5m/15m/1h 频率。
+7. 实现 JudgmentStream 的跃迁、持续和冲突 detector。
+8. 实现五类非链上 MarketEvent 与生命周期。
+9. 实现证据摘要、CLI inbox 和通知预算。
+10. 实现 OutcomeReviewer 和校准报告。
+11. 最后接入 Bitcoin 与 Ethereum 链上数据。
+
+核心验收不是“生成了一段像分析师的话”，而是：
+
+> 对任意历史时点，系统能用当时真实可见的数据重建连续判断，解释状态为何变化、展示反向证据，并在未来固定时间诚实评价这次判断。
