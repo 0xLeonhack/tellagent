@@ -1,0 +1,24 @@
+[project]
+name = "tellagent"
+version = "0.1.0"
+description = "A lightweight BTC/ETH market contradiction demo"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "httpx>=0.27,<1",
+  "pydantic>=2.7,<3",
+  "rich>=13.7,<14",
+  "typer>=0.12,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+tellagent = "tellagent.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

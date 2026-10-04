@@ -12,13 +12,22 @@ tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现
 
 ## 当前状态
 
-仓库目前处于 **Hackathon MVP 设计阶段**，以产品、技术规格和实现计划为主，尚未提交可运行的 Python 包。文档中的目标命令是：
+仓库目前已经完成 **Hackathon MVP 的离线闭环**：固定 Fixture、确定性指标、Fake Analyst、Pydantic 校验、Rich CLI 和基础测试均已实现。实时 API 和真实模型适配仍在后续阶段。
+
+安装依赖并运行离线 Demo：
 
 ```bash
-python -m tellagent demo
+uv sync --dev
+uv run python -m tellagent demo --fixture
 ```
 
-完成 MVP 后，该命令应在 30 秒内输出一条完整报告；断网时使用 fixture 仍应可以演示。现阶段不要把上述命令当作已经可用的安装步骤。
+也可以只查看 ETH：
+
+```bash
+uv run python -m tellagent demo --fixture --asset ETH
+```
+
+当前 Demo 不依赖网络；实时 API 和真实模型接入完成后，仍会保留 Fixture 模式。
 
 ## 为什么做它
 
@@ -106,7 +115,7 @@ MVP 验证后，再逐步恢复持续运行能力：
 
 ## 技术方向
 
-目标实现使用 Python 3.12、`uv`、Typer、Rich、httpx、Pydantic v2 和 pytest。MVP 保持为一个简单的 Python 包，不提前引入 FastAPI、前端框架、队列、向量数据库或多 agent 编排框架。
+当前实现使用 Python 3.12、`uv`、Typer、Rich、httpx、Pydantic v2 和 pytest。MVP 保持为一个简单的 Python 包，不提前引入 FastAPI、前端框架、队列、向量数据库或多 agent 编排框架。
 
 推荐的最小目录如下：
 
@@ -119,6 +128,8 @@ tellagent/
   analyst.py
   schemas.py
   fixtures/demo_snapshot.json
+  fixtures/demo_leverage_led.json
+  fixtures/demo_spot_confirmed.json
 tests/
 ```
 
