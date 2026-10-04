@@ -5,7 +5,7 @@ import typer
 
 from .analyst import RemoteAnalystConfig, generate_demo_report, generate_remote_report
 from .data import DEFAULT_FIXTURE, load_fixture, load_live_snapshot
-from .renderer import render_reports
+from .renderer import render_json, render_reports
 
 app = typer.Typer(add_completion=False, help="BTC/ETH market contradiction demo")
 
@@ -22,6 +22,7 @@ def demo(
     asset: Optional[str] = typer.Option(None, "--asset", help="Only render one asset, e.g. ETH."),
     timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Live API timeout in seconds."),
     analyst: str = typer.Option("demo", "--analyst", help="Analyst mode: demo or remote."),
+    output_json: bool = typer.Option(False, "--json", help="Print validated reports as JSON."),
 ) -> None:
     if fixture and path:
         snapshot = load_fixture(path)
@@ -47,4 +48,7 @@ def demo(
             raise typer.BadParameter(str(exc)) from exc
     else:
         reports = [generate_demo_report(snapshot, item) for item in selected]
-    render_reports(reports)
+    if output_json:
+        typer.echo(render_json(reports))
+    else:
+        render_reports(reports)

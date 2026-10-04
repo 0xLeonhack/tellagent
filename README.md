@@ -27,6 +27,12 @@ uv run python -m tellagent demo --fixture
 uv run python -m tellagent demo --fixture --asset ETH
 ```
 
+需要给脚本或后续界面使用时，可以输出经过校验的 JSON：
+
+```bash
+uv run python -m tellagent demo --fixture --json
+```
+
 Fixture 模式不依赖网络；真实模型接入完成后，仍会保留 Fixture 和实时 API 模式。
 
 使用公共 API 获取当前快照：

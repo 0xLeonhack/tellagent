@@ -15,3 +15,10 @@ def test_remote_analyst_requires_configuration():
     result = CliRunner().invoke(app, ["demo", "--fixture", "--analyst", "remote"])
     assert result.exit_code == 2
     assert "TELLAGENT_MODEL_API_URL" in result.output
+
+
+def test_demo_json_output_is_machine_readable():
+    result = CliRunner().invoke(app, ["demo", "--fixture", "--json"])
+    assert result.exit_code == 0
+    assert '"asset": "BTC"' in result.stdout
+    assert "Market Contradiction Report" not in result.stdout
