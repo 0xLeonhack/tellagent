@@ -12,7 +12,7 @@ tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现
 
 ## 当前状态
 
-仓库目前已经完成 **Hackathon MVP 的离线闭环**：固定 Fixture、确定性指标、Fake Analyst、Pydantic 校验、Rich CLI 和基础测试均已实现。实时 API 和真实模型适配仍在后续阶段。
+仓库目前已经完成 **Hackathon MVP 的离线闭环**，并增加了轻量实时数据适配：固定 Fixture、Coinbase/Deribit 公共 API、确定性指标、Fake Analyst、Pydantic 校验、Rich CLI 和基础测试均已实现。真实模型适配仍在后续阶段。
 
 安装依赖并运行离线 Demo：
 
@@ -27,7 +27,15 @@ uv run python -m tellagent demo --fixture
 uv run python -m tellagent demo --fixture --asset ETH
 ```
 
-当前 Demo 不依赖网络；实时 API 和真实模型接入完成后，仍会保留 Fixture 模式。
+Fixture 模式不依赖网络；真实模型接入完成后，仍会保留 Fixture 和实时 API 模式。
+
+使用公共 API 获取当前快照：
+
+```bash
+uv run python -m tellagent demo --live
+```
+
+实时模式目前能计算 Coinbase 最近两根小时 K 线的价格和现货成交量变化，并读取 Deribit 当前 funding。由于还没有本地历史存储，open interest 变化会明确显示为缺失；网络或 API 失败时请使用 `--fixture` 离线演示。
 
 ## 为什么做它
 
