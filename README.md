@@ -93,6 +93,7 @@ MVP 验证后，再逐步恢复持续运行能力：
 
 | 文档 | 内容 |
 | --- | --- |
+| [`DEVELOPMENT.md`](DEVELOPMENT.md) | 当前 Demo 的开发流程、范围、守则和验收标准 |
 | [`context.md`](context.md) | 当前决策、术语、不可违背的边界和未知项 |
 | [`intend.md`](intend.md) | 系统与各类 agent 的核心意图、取舍和拒绝项 |
 | [`prd.md`](prd.md) | Hackathon MVP 的用户体验、技术选择和完成定义 |
