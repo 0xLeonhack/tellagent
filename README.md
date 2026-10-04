@@ -37,6 +37,17 @@ uv run python -m tellagent demo --live
 
 实时模式目前能计算 Coinbase 最近两根小时 K 线的价格和现货成交量变化，并读取 Deribit 当前 funding。由于还没有本地历史存储，open interest 变化会明确显示为缺失；网络或 API 失败时请使用 `--fixture` 离线演示。
 
+可选的远程 Analyst 使用 OpenAI-compatible JSON API。配置后运行：
+
+```bash
+export TELLAGENT_MODEL_API_URL="https://your-provider.example/v1/chat/completions"
+export TELLAGENT_MODEL_API_KEY="your-key"
+export TELLAGENT_MODEL_NAME="your-model"
+uv run python -m tellagent demo --fixture --analyst remote
+```
+
+远程模型只接收已经计算好的快照和证据；未配置这些变量时，`demo` 仍使用本地 Fake Analyst。
+
 ## 为什么做它
 
 市场数据并不稀缺，困难在于把不同来源拼成一个可检查的结论：

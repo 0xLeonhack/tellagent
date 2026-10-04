@@ -3,7 +3,7 @@ from typing import Optional
 
 import typer
 
-from .analyst import generate_demo_report
+from .analyst import RemoteAnalystConfig, generate_demo_report, generate_remote_report
 from .data import DEFAULT_FIXTURE, load_fixture, load_live_snapshot
 from .renderer import render_reports
 
@@ -21,6 +21,7 @@ def demo(
     path: Optional[Path] = typer.Option(None, "--path", help="Override fixture path."),
     asset: Optional[str] = typer.Option(None, "--asset", help="Only render one asset, e.g. ETH."),
     timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Live API timeout in seconds."),
+    analyst: str = typer.Option("demo", "--analyst", help="Analyst mode: demo or remote."),
 ) -> None:
     if fixture and path:
         snapshot = load_fixture(path)
@@ -36,5 +37,14 @@ def demo(
     selected = [item for item in snapshot.assets if not asset or item.symbol.upper() == asset.upper()]
     if not selected:
         raise typer.BadParameter("Asset not found in fixture: {}".format(asset))
-    reports = [generate_demo_report(snapshot, item) for item in selected]
+    if analyst not in {"demo", "remote"}:
+        raise typer.BadParameter("--analyst must be demo or remote.")
+    if analyst == "remote":
+        try:
+            config = RemoteAnalystConfig.from_env()
+            reports = [generate_remote_report(snapshot, item, config) for item in selected]
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    else:
+        reports = [generate_demo_report(snapshot, item) for item in selected]
     render_reports(reports)
