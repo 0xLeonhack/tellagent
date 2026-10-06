@@ -6,16 +6,26 @@
 
 tellagent 只研究 BTC、ETH 和 ETH/BTC，目标是发现跨来源证据冲突，并保留“当时实际看到了什么”。
 
-## 当前决策
+## 当前 Demo 决策
+
+- 使用场景：现场演示和个人本地研究。
+- 入口：单个 Python CLI。
+- 默认数据：固定 Fixture；可选 Coinbase/Deribit 公共 API。
+- 默认分析：确定性 Fake Analyst；可选 OpenAI-compatible 远程 Analyst。
+- 存储：无数据库，不保存历史状态。
+- 结果：研究报告，不是交易信号。
+- 明确不做：后台 worker、Web、多 Agent、链上数据和自动复盘。
+
+## Demo 之后的长期方向
 
 - 使用场景：个人研究者，本地运行。
-- 首版入口：CLI + 后台 worker。
+- 长期版本入口：CLI + 后台 worker。
 - 后续入口：localhost Web，主要用于浏览事件、证据和时间线。
-- 首版数据：Coinbase 现货、Deribit 永续。
-- 首版频率：5 分钟。
-- 首版结果：研究事件，不是交易信号。
-- 首版存储：SQLite，append-only 原始观测。
-- 首版 agent：Observer/Jev；Investigator 只在事件触发后调用。
+- 长期版本数据：Coinbase 现货、Deribit 永续。
+- 长期版本频率：5 分钟。
+- 长期版本结果：研究事件，不是交易信号。
+- 长期版本存储：SQLite，append-only 原始观测。
+- 长期版本 agent：Observer/Jev；Investigator 只在事件触发后调用。
 
 ## 不可违背的边界
 

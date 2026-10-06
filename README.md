@@ -12,7 +12,7 @@ tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现
 
 ## 当前状态
 
-仓库目前已经完成 **Hackathon MVP 的离线闭环**，并增加了轻量实时数据适配：固定 Fixture、Coinbase/Deribit 公共 API、确定性指标、Fake Analyst、Pydantic 校验、Rich CLI 和基础测试均已实现。真实模型适配仍在后续阶段。
+**Hackathon Demo 已完成。** 当前版本包含固定 Fixture、具名演示场景、Coinbase/Deribit 公共 API、确定性指标、Fake Analyst、可选远程 Analyst、Pydantic 校验、Rich/JSON 输出和自动测试。
 
 安装依赖并运行离线 Demo：
 
@@ -40,7 +40,7 @@ uv run python -m tellagent demo --scenario spot
 uv run python -m tellagent demo --fixture --json
 ```
 
-Fixture 模式不依赖网络；真实模型接入完成后，仍会保留 Fixture 和实时 API 模式。
+Fixture 模式不依赖网络，也是现场演示的默认模式。
 
 使用公共 API 获取当前快照：
 
@@ -59,7 +59,28 @@ export TELLAGENT_MODEL_NAME="your-model"
 uv run python -m tellagent demo --fixture --analyst remote
 ```
 
-远程模型只接收已经计算好的快照和证据；未配置这些变量时，`demo` 仍使用本地 Fake Analyst。
+远程模型只接收已经计算好的快照和证据，只能选择代码生成的证据，不能覆盖资产、指标、时间或来源。未配置这些变量时，`demo` 使用本地 Fake Analyst。
+
+运行测试：
+
+```bash
+uv run pytest
+```
+
+## Demo 完成状态
+
+- [x] Python 3.12 隔离环境与锁定依赖
+- [x] BTC/ETH 固定 Fixture
+- [x] 杠杆主导与现货确认场景
+- [x] 确定性指标和证据分类
+- [x] 本地 Fake Analyst
+- [x] 可选 OpenAI-compatible Analyst
+- [x] Coinbase/Deribit 公共数据适配
+- [x] Rich 终端报告和 JSON 输出
+- [x] 缺失数据、非法输入和远程响应校验
+- [x] 离线 CLI 集成测试
+
+Demo 的已知限制：实时模式没有本地历史存储，因此不能计算 open interest 的小时变化，会明确显示为缺失；远程 Analyst 需要用户自行提供兼容接口；当前规则使用透明的演示阈值，尚未经过历史样本校准。
 
 ## 为什么做它
 
@@ -74,7 +95,7 @@ tellagent 的重点不是再做一个图表终端，而是把“事实 → 判�
 
 ## MVP 做什么
 
-MVP 只覆盖 BTC、ETH 和 ETH/BTC，优先使用 Coinbase 现货与 Deribit 永续数据，先完成一次快照分析：
+Demo 只输出 BTC 和 ETH 报告，优先使用 Coinbase 现货与 Deribit 永续数据，完成一次快照分析。ETH/BTC 相对关系保留在长期设计中，不进入当前 Demo：
 
 ```text
 fixture / API
@@ -153,11 +174,13 @@ MVP 验证后，再逐步恢复持续运行能力：
 
 ```text
 tellagent/
+  __init__.py
   __main__.py
   cli.py
   data.py
   metrics.py
   analyst.py
+  renderer.py
   schemas.py
   fixtures/demo_snapshot.json
   fixtures/demo_leverage_led.json

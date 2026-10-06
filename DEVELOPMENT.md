@@ -4,10 +4,10 @@
 
 ## 1. 当前目标
 
-当前唯一目标是做出一个可以离线演示的 BTC/ETH 市场矛盾报告：
+当前 Demo 已完成。它可以离线生成 BTC/ETH 市场矛盾报告：
 
 ```bash
-python -m tellagent demo --fixture
+uv run python -m tellagent demo --fixture
 ```
 
 演示者应在 30 秒内看到：
@@ -183,6 +183,8 @@ python -m tellagent demo --fixture
 
 在阶段 6 的离线闭环稳定之前，不进入实时 API 和真实模型开发。
 
+当前进度：阶段 0–9 已完成。后续修改仍需遵守小模块、先验证、再提交的流程，不在 Demo 分支继续加入数据库、Web、后台 worker 或多 Agent。
+
 ## 6. 推荐模块边界
 
 ```text
@@ -258,8 +260,8 @@ invalidation_condition
 每次完成一个垂直功能后，至少运行：
 
 ```bash
-pytest
-python -m tellagent demo --fixture
+uv run pytest
+uv run python -m tellagent demo --fixture
 ```
 
 测试应覆盖：
