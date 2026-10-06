@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 from .schemas import AssetSnapshot, EvidenceBundle, SnapshotAnalysis
 
@@ -8,45 +8,13 @@ def _percent(value: float) -> str:
 
 
 def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
-    supporting: List[str] = []
-    contradicting: List[str] = []
-    missing: List[str] = []
-    quality_notes: List[str] = []
-
     price = asset.price_change_1h
     volume = asset.spot_volume_change_1h
-    funding = asset.funding_rate
     oi = asset.open_interest_change_1h
-
-    if price is None:
-        missing.append("缺少 1h 价格变化")
-    elif price > 0.02:
-        supporting.append("价格 1h 上涨 {}".format(_percent(price)))
-    elif price < -0.02:
-        supporting.append("价格 1h 下跌 {}".format(_percent(abs(price))))
-    else:
+    missing = _missing_evidence(asset)
+    quality_notes: List[str] = []
+    if price is not None and -0.02 <= price <= 0.02:
         quality_notes.append("价格变化未达到明显趋势阈值")
-
-    if volume is None:
-        missing.append("缺少现货成交量变化")
-    elif volume > 0.05:
-        supporting.append("现货成交量明显增加 {}".format(_percent(volume)))
-    elif price is not None and price > 0.02:
-        contradicting.append("现货成交量仅变化 {}，未充分确认上涨".format(_percent(volume)))
-
-    if funding is None:
-        missing.append("缺少 funding rate")
-    elif funding > 0.0002:
-        supporting.append("funding rate 偏高 ({:.4f}%)".format(funding * 100))
-    elif funding < -0.0002:
-        supporting.append("funding rate 偏低 ({:.4f}%)".format(funding * 100))
-
-    if oi is None:
-        missing.append("缺少 open interest 变化")
-    elif oi > 0.08:
-        supporting.append("open interest 快速增加 {}".format(_percent(oi)))
-    elif oi < -0.08:
-        supporting.append("open interest 快速下降 {}".format(_percent(abs(oi))))
 
     leverage_led = (
         price is not None and price > 0.02 and oi is not None and oi > 0.08
@@ -56,44 +24,26 @@ def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
         price is not None and price > 0.02 and volume is not None and volume > 0.05
         and (oi is None or oi <= 0.12)
     )
-    deleveraging = (
-        price is not None and price < -0.02 and oi is not None and oi < -0.08
-    )
+    deleveraging = price is not None and price < -0.02 and oi is not None and oi < -0.08
 
     if leverage_led:
-        suggested_state = "leverage_led"
-        headline = "上涨可能主要由杠杆推动，现货确认不足"
+        state = "leverage_led"
+        supporting, contradicting = _leverage_evidence(asset)
     elif spot_confirmed:
-        suggested_state = "spot_confirmed"
-        headline = "价格上涨得到现货成交确认"
+        state = "spot_confirmed"
+        supporting, contradicting = _spot_evidence(asset)
     elif deleveraging:
-        suggested_state = "deleveraging"
-        headline = "下跌伴随持仓收缩，市场可能正在去杠杆"
+        state = "deleveraging"
+        supporting, contradicting = _deleveraging_evidence(asset)
     else:
-        suggested_state = "uncertain"
-        headline = "证据不足，暂时无法确认主导市场状态"
+        state = "uncertain"
+        supporting = ["未发现足够的跨指标证据支持单一市场状态"]
+        contradicting = _uncertain_evidence(asset)
 
-    if suggested_state == "leverage_led":
-        contradicting.append("如果现货成交同步持续放大，则杠杆主导解释会减弱")
-        invalidation = "若现货成交继续扩大且 open interest 回落，当前判断应失效。"
-    elif suggested_state == "spot_confirmed":
-        contradicting.append("open interest 若突然快速扩张，仍需警惕杠杆推动")
-        invalidation = "若现货成交回落而 open interest 快速扩张，现货确认判断应降级。"
-    elif suggested_state == "deleveraging":
-        contradicting.append("如果价格快速收复且现货成交放大，去杠杆解释会减弱")
-        invalidation = "若 open interest 回升且价格重新走强，当前去杠杆判断应失效。"
-    else:
-        contradicting.append("当前没有足够的跨指标证据支持单一市场叙事")
-        invalidation = "获得连续的价格、现货和衍生品数据后再更新判断。"
-
-    if not supporting:
-        supporting.append("未发现足够的支持证据")
+    if not contradicting:
+        contradicting.append("当前数据中未发现明确的反向证据")
     if not missing:
         missing.append("未接入链上数据，链上确认仍然缺失")
-
-    confidence = 0.45
-    if suggested_state in {"leverage_led", "spot_confirmed", "deleveraging"}:
-        confidence = min(0.92, 0.55 + 0.08 * len(supporting) - 0.04 * len(missing))
 
     return SnapshotAnalysis(
         asset=asset,
@@ -102,28 +52,108 @@ def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
             contradicting=contradicting,
             missing=missing,
         ),
-        suggested_state=suggested_state,
+        suggested_state=state,
         quality_notes=quality_notes,
     )
 
 
-def analysis_fields(analysis: SnapshotAnalysis):
-    """Return derived report fields without putting presentation into the schema."""
+def _missing_evidence(asset: AssetSnapshot) -> List[str]:
+    fields = (
+        (asset.price_change_1h, "缺少 1h 价格变化"),
+        (asset.price_change_6h, "缺少 6h 价格变化"),
+        (asset.spot_volume_change_1h, "缺少现货成交量变化"),
+        (asset.funding_rate, "缺少 funding rate"),
+        (asset.open_interest_change_1h, "缺少 open interest 变化"),
+    )
+    return [message for value, message in fields if value is None]
+
+
+def _leverage_evidence(asset: AssetSnapshot) -> Tuple[List[str], List[str]]:
+    supporting = [
+        "价格 1h 上涨 {}".format(_percent(asset.price_change_1h)),
+        "open interest 快速增加 {}".format(_percent(asset.open_interest_change_1h)),
+    ]
+    contradicting: List[str] = []
+    if asset.funding_rate is not None and asset.funding_rate > 0.0002:
+        supporting.append("funding rate 偏高 ({:.4f}%)".format(asset.funding_rate * 100))
+    if asset.spot_volume_change_1h is not None:
+        supporting.append(
+            "现货成交量变化 {}，弱于持仓增长".format(_percent(asset.spot_volume_change_1h))
+        )
+        if asset.spot_volume_change_1h > 0:
+            contradicting.append(
+                "现货成交量也增加了 {}".format(_percent(asset.spot_volume_change_1h))
+            )
+    return supporting, contradicting
+
+
+def _spot_evidence(asset: AssetSnapshot) -> Tuple[List[str], List[str]]:
+    supporting = [
+        "价格 1h 上涨 {}".format(_percent(asset.price_change_1h)),
+        "现货成交量明显增加 {}".format(_percent(asset.spot_volume_change_1h)),
+    ]
+    contradicting: List[str] = []
+    if asset.funding_rate is not None and asset.funding_rate > 0.0002:
+        contradicting.append("funding rate 同时偏高 ({:.4f}%)".format(asset.funding_rate * 100))
+    if asset.open_interest_change_1h is not None and asset.open_interest_change_1h > 0.08:
+        contradicting.append(
+            "open interest 同时增加 {}".format(_percent(asset.open_interest_change_1h))
+        )
+    return supporting, contradicting
+
+
+def _deleveraging_evidence(asset: AssetSnapshot) -> Tuple[List[str], List[str]]:
+    supporting = [
+        "价格 1h 下跌 {}".format(_percent(abs(asset.price_change_1h))),
+        "open interest 快速下降 {}".format(_percent(abs(asset.open_interest_change_1h))),
+    ]
+    contradicting: List[str] = []
+    if asset.spot_volume_change_1h is not None and asset.spot_volume_change_1h > 0.05:
+        contradicting.append(
+            "现货成交量增加 {}，卖压可能不只来自去杠杆".format(
+                _percent(asset.spot_volume_change_1h)
+            )
+        )
+    return supporting, contradicting
+
+
+def _uncertain_evidence(asset: AssetSnapshot) -> List[str]:
+    evidence: List[str] = []
+    if asset.price_change_1h is not None:
+        evidence.append("价格 1h 变化仅为 {}".format(_percent(asset.price_change_1h)))
+    if asset.open_interest_change_1h is None:
+        evidence.append("缺少持仓变化，无法判断杠杆是否主导")
+    return evidence or ["当前输入不足以形成可反驳的市场叙事"]
+
+
+def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:
+    """Return deterministic presentation fields for the selected state."""
     state = analysis.suggested_state
-    if state == "leverage_led":
-        headline = "上涨可能主要由杠杆推动，现货确认不足"
-        invalidation = "若现货成交继续扩大且 open interest 回落，当前判断应失效。"
-        confidence = min(0.92, 0.55 + 0.08 * len(analysis.evidence.supporting) - 0.04 * len(analysis.evidence.missing))
-    elif state == "spot_confirmed":
-        headline = "价格上涨得到现货成交确认"
-        invalidation = "若现货成交回落而 open interest 快速扩张，现货确认判断应降级。"
-        confidence = min(0.92, 0.55 + 0.08 * len(analysis.evidence.supporting) - 0.04 * len(analysis.evidence.missing))
-    elif state == "deleveraging":
-        headline = "下跌伴随持仓收缩，市场可能正在去杠杆"
-        invalidation = "若 open interest 回升且价格重新走强，当前去杠杆判断应失效。"
-        confidence = min(0.92, 0.55 + 0.08 * len(analysis.evidence.supporting) - 0.04 * len(analysis.evidence.missing))
+    values = {
+        "leverage_led": (
+            "上涨可能主要由杠杆推动，现货确认不足",
+            "若现货成交继续扩大且 open interest 回落，当前判断应失效。",
+        ),
+        "spot_confirmed": (
+            "价格上涨得到现货成交确认",
+            "若现货成交回落而 open interest 快速扩张，现货确认判断应降级。",
+        ),
+        "deleveraging": (
+            "下跌伴随持仓收缩，市场可能正在去杠杆",
+            "若 open interest 回升且价格重新走强，当前去杠杆判断应失效。",
+        ),
+        "uncertain": (
+            "证据不足，暂时无法确认主导市场状态",
+            "获得连续的价格、现货和衍生品数据后再更新判断。",
+        ),
+    }
+    headline, invalidation = values[state]
+    if state == "uncertain":
+        confidence = 0.35 if len(analysis.evidence.missing) >= 2 else 0.45
     else:
-        headline = "证据不足，暂时无法确认主导市场状态"
-        invalidation = "获得连续的价格、现货和衍生品数据后再更新判断。"
-        confidence = 0.45
+        confidence = min(
+            0.92,
+            0.55 + 0.08 * len(analysis.evidence.supporting)
+            - 0.04 * len(analysis.evidence.missing),
+        )
     return headline, invalidation, confidence

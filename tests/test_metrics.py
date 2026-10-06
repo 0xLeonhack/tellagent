@@ -13,6 +13,8 @@ def test_leverage_led_scene():
     assert result.suggested_state == "leverage_led"
     assert result.evidence.supporting
     assert result.evidence.contradicting
+    assert any("弱于持仓增长" in item for item in result.evidence.supporting)
+    assert any("也增加" in item for item in result.evidence.contradicting)
 
 
 def test_missing_inputs_are_visible():
@@ -30,3 +32,17 @@ def test_spot_confirmed_scene():
         open_interest_change_1h=0.04,
     ))
     assert result.suggested_state == "spot_confirmed"
+    assert all("funding rate" not in item for item in result.evidence.supporting)
+
+
+def test_high_funding_is_counter_evidence_for_spot_confirmation():
+    result = analyze_asset(AssetSnapshot(
+        symbol="BTC",
+        price_change_1h=0.028,
+        price_change_6h=0.04,
+        spot_volume_change_1h=0.09,
+        funding_rate=0.0003,
+        open_interest_change_1h=0.04,
+    ))
+    assert result.suggested_state == "spot_confirmed"
+    assert any("funding rate" in item for item in result.evidence.contradicting)
