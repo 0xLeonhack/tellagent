@@ -1,4 +1,4 @@
-from tellagent.metrics import analyze_asset
+from tellagent.metrics import analysis_fields, analyze_asset
 from tellagent.schemas import AssetSnapshot
 
 
@@ -46,3 +46,15 @@ def test_high_funding_is_counter_evidence_for_spot_confirmation():
     ))
     assert result.suggested_state == "spot_confirmed"
     assert any("funding rate" in item for item in result.evidence.contradicting)
+
+
+def test_confidence_is_rounded_for_json_output():
+    result = analyze_asset(AssetSnapshot(
+        symbol="ETH",
+        price_change_1h=0.042,
+        price_change_6h=0.067,
+        spot_volume_change_1h=0.012,
+        funding_rate=0.00024,
+        open_interest_change_1h=0.11,
+    ))
+    assert analysis_fields(result)[2] == 0.83

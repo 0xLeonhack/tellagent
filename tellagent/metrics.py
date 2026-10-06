@@ -151,9 +151,12 @@ def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:
     if state == "uncertain":
         confidence = 0.35 if len(analysis.evidence.missing) >= 2 else 0.45
     else:
-        confidence = min(
-            0.92,
-            0.55 + 0.08 * len(analysis.evidence.supporting)
-            - 0.04 * len(analysis.evidence.missing),
+        confidence = round(
+            min(
+                0.92,
+                0.55 + 0.08 * len(analysis.evidence.supporting)
+                - 0.04 * len(analysis.evidence.missing),
+            ),
+            2,
         )
     return headline, invalidation, confidence
