@@ -54,18 +54,26 @@ def load_live_snapshot(timeout: float = 8.0, client: Optional[httpx.Client] = No
 def _asset_from_coinbase_and_deribit(
     client: httpx.Client, symbol: str, candles: object
 ) -> AssetSnapshot:
-    if not isinstance(candles, list) or len(candles) < 2:
-        raise ValueError("Coinbase returned fewer than two hourly candles for {}".format(symbol))
+    if not isinstance(candles, list) or len(candles) < 7:
+        raise ValueError("Coinbase returned fewer than seven hourly candles for {}".format(symbol))
     ordered = sorted(candles, key=lambda candle: candle[0])
-    previous, latest = ordered[-2], ordered[-1]
+    # Coinbase includes the currently forming candle. Use completed candles so
+    # repeated runs within the same hour compare stable, like-for-like windows.
+    completed = ordered[:-1]
+    if len(completed) < 6:
+        raise ValueError("Coinbase returned insufficient completed candles for {}".format(symbol))
+    latest = completed[-1]
+    previous = completed[-2]
+    six_hours_ago = completed[-6]
     try:
-        previous_open = float(previous[3])
+        previous_close = float(previous[4])
         latest_close = float(latest[4])
         previous_volume = float(previous[5])
         latest_volume = float(latest[5])
+        six_hour_close = float(six_hours_ago[4])
     except (IndexError, TypeError, ValueError) as exc:
         raise ValueError("Unexpected Coinbase candle format for {}".format(symbol)) from exc
-    if previous_open == 0 or previous_volume == 0:
+    if previous_close == 0 or previous_volume == 0 or six_hour_close == 0:
         raise ValueError("Coinbase returned zero baseline for {}".format(symbol))
 
     ticker = _get_json(client, "{}/public/ticker".format(DERIBIT_API), {
@@ -74,7 +82,8 @@ def _asset_from_coinbase_and_deribit(
     funding_rate = _deribit_funding(ticker, symbol)
     return AssetSnapshot(
         symbol=symbol,
-        price_change_1h=(latest_close - previous_open) / previous_open,
+        price_change_1h=(latest_close - previous_close) / previous_close,
+        price_change_6h=(latest_close - six_hour_close) / six_hour_close,
         spot_volume_change_1h=(latest_volume - previous_volume) / previous_volume,
         funding_rate=funding_rate,
         open_interest_change_1h=None,
