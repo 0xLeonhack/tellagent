@@ -1,13 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
-from tellagent.schemas import MarketReport
+from tellagent.schemas import AssetSnapshot, MarketReport
 
 
 def test_report_rejects_confidence_outside_range():
     with pytest.raises(ValidationError):
         MarketReport(
             asset="BTC",
+            metrics=AssetSnapshot(symbol="BTC"),
             headline="test",
             state="uncertain",
             confidence=1.1,

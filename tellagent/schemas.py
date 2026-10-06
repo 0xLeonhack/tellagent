@@ -32,6 +32,7 @@ class MarketReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     asset: str
+    metrics: AssetSnapshot
     headline: str = Field(min_length=1)
     state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
     confidence: float = Field(ge=0, le=1)

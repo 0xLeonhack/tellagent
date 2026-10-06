@@ -14,6 +14,7 @@ def generate_demo_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -> Mark
     headline, invalidation, confidence = analysis_fields(analysis)
     return MarketReport(
         asset=asset.symbol,
+        metrics=asset,
         headline=headline,
         state=analysis.suggested_state,
         confidence=confidence,
@@ -96,6 +97,7 @@ def generate_remote_report(
                 raise ValueError("Model response must be a JSON object.")
             return MarketReport(
                 asset=asset.symbol,
+                metrics=asset,
                 data_time=snapshot.as_of,
                 sources=snapshot.sources,
                 **model_fields,

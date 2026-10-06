@@ -18,6 +18,13 @@ def render_reports(reports: Iterable[MarketReport], console: Console = None) -> 
         table.add_row("数据来源", ", ".join(report.sources))
         table.add_row("状态", "{} (confidence {:.0%})".format(report.state, report.confidence))
         console.print(Panel(table, title=report.asset, border_style="cyan"))
+        metrics = report.metrics
+        console.print("[bold]关键指标[/bold]")
+        console.print("  • 价格变化 1h: {}".format(_format_percent(metrics.price_change_1h)))
+        console.print("  • 价格变化 6h: {}".format(_format_percent(metrics.price_change_6h)))
+        console.print("  • 现货成交量变化 1h: {}".format(_format_percent(metrics.spot_volume_change_1h)))
+        console.print("  • funding rate: {}".format(_format_percent(metrics.funding_rate, digits=4)))
+        console.print("  • open interest 变化 1h: {}".format(_format_percent(metrics.open_interest_change_1h)))
         console.print("[bold]判断[/bold]  {}".format(report.headline))
         _print_evidence(console, "支持证据", report.supporting_evidence, "green")
         _print_evidence(console, "反向证据", report.contradicting_evidence, "yellow")
@@ -38,3 +45,9 @@ def _print_evidence(console: Console, title: str, items, color: str) -> None:
     console.print("[bold {}]{}[/bold {}]".format(color, title, color))
     for item in items:
         console.print("  • {}".format(item))
+
+
+def _format_percent(value, digits: int = 2) -> str:
+    if value is None:
+        return "缺失"
+    return ("{:+." + str(digits) + "f}%").format(value * 100)

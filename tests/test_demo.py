@@ -9,6 +9,8 @@ def test_demo_command_renders_report():
     assert "Market Contradiction Report" in result.stdout
     assert "反向证据" in result.stdout
     assert "失效条件" in result.stdout
+    assert "关键指标" in result.stdout
+    assert "open interest 变化 1h" in result.stdout
 
 
 def test_remote_analyst_requires_configuration():
@@ -21,4 +23,5 @@ def test_demo_json_output_is_machine_readable():
     result = CliRunner().invoke(app, ["demo", "--fixture", "--json"])
     assert result.exit_code == 0
     assert '"asset": "BTC"' in result.stdout
+    assert '"metrics"' in result.stdout
     assert "Market Contradiction Report" not in result.stdout
