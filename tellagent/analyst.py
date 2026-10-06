@@ -6,7 +6,7 @@ from typing import Optional
 import httpx
 
 from .metrics import analysis_fields, analyze_asset
-from .schemas import AssetSnapshot, MarketReport, MarketSnapshot
+from .schemas import AnalystResult, AssetSnapshot, MarketReport, MarketSnapshot
 
 
 def generate_demo_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketReport:
@@ -74,7 +74,8 @@ def generate_remote_report(
                     "metrics, or give trading instructions. The JSON must contain: "
                     "headline, state, confidence, supporting_evidence, "
                     "contradicting_evidence, missing_evidence, "
-                    "invalidation_condition."
+                    "invalidation_condition. Evidence strings must be copied exactly "
+                    "from the supplied evidence lists; do not add new evidence."
                 ),
             },
             {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
@@ -95,12 +96,14 @@ def generate_remote_report(
             model_fields = json.loads(content) if isinstance(content, str) else content
             if not isinstance(model_fields, dict):
                 raise ValueError("Model response must be a JSON object.")
+            result = AnalystResult.model_validate(model_fields)
+            _validate_evidence_selection(result, analysis.evidence)
             return MarketReport(
                 asset=asset.symbol,
                 metrics=asset,
                 data_time=snapshot.as_of,
                 sources=snapshot.sources,
-                **model_fields,
+                **result.model_dump(),
             )
         except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ValueError("Remote analyst failed: {}".format(exc)) from exc
@@ -116,3 +119,15 @@ def _extract_model_content(payload: object):
         return payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("Model response has no chat completion content.") from exc
+
+
+def _validate_evidence_selection(result: AnalystResult, evidence) -> None:
+    groups = (
+        ("supporting", result.supporting_evidence, evidence.supporting),
+        ("contradicting", result.contradicting_evidence, evidence.contradicting),
+        ("missing", result.missing_evidence, evidence.missing),
+    )
+    for label, selected, allowed in groups:
+        invented = [item for item in selected if item not in allowed]
+        if invented:
+            raise ValueError("Model invented {} evidence: {}".format(label, invented[0]))
