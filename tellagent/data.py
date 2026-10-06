@@ -9,6 +9,11 @@ from .schemas import AssetSnapshot, MarketSnapshot
 
 
 DEFAULT_FIXTURE = Path(__file__).parent / "fixtures" / "demo_snapshot.json"
+SCENARIO_FIXTURES = {
+    "default": DEFAULT_FIXTURE,
+    "leverage": Path(__file__).parent / "fixtures" / "demo_leverage_led.json",
+    "spot": Path(__file__).parent / "fixtures" / "demo_spot_confirmed.json",
+}
 
 
 def load_fixture(path: Union[str, Path] = DEFAULT_FIXTURE) -> MarketSnapshot:

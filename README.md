@@ -27,6 +27,13 @@ uv run python -m tellagent demo --fixture
 uv run python -m tellagent demo --fixture --asset ETH
 ```
 
+现场演示可以直接切换预置场景：
+
+```bash
+uv run python -m tellagent demo --scenario leverage
+uv run python -m tellagent demo --scenario spot
+```
+
 需要给脚本或后续界面使用时，可以输出经过校验的 JSON：
 
 ```bash

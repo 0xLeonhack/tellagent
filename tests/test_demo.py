@@ -1,4 +1,5 @@
 from typer.testing import CliRunner
+import json
 
 from tellagent.cli import app
 
@@ -25,3 +26,19 @@ def test_demo_json_output_is_machine_readable():
     assert '"asset": "BTC"' in result.stdout
     assert '"metrics"' in result.stdout
     assert "Market Contradiction Report" not in result.stdout
+
+
+def test_named_spot_scenario():
+    result = CliRunner().invoke(app, ["demo", "--scenario", "spot", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload[0]["state"] == "spot_confirmed"
+
+
+def test_invalid_fixture_has_readable_error(tmp_path):
+    fixture = tmp_path / "broken.json"
+    fixture.write_text('{"assets": []}', encoding="utf-8")
+    result = CliRunner().invoke(app, ["demo", "--path", str(fixture)])
+    assert result.exit_code == 2
+    assert "validation error" in result.output
+    assert "Traceback" not in result.output
