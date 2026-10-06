@@ -59,17 +59,17 @@ def load_live_snapshot(timeout: float = 8.0, client: Optional[httpx.Client] = No
 def _asset_from_coinbase_and_deribit(
     client: httpx.Client, symbol: str, candles: object
 ) -> AssetSnapshot:
-    if not isinstance(candles, list) or len(candles) < 7:
-        raise ValueError("Coinbase returned fewer than seven hourly candles for {}".format(symbol))
+    if not isinstance(candles, list) or len(candles) < 8:
+        raise ValueError("Coinbase returned fewer than eight hourly candles for {}".format(symbol))
     ordered = sorted(candles, key=lambda candle: candle[0])
     # Coinbase includes the currently forming candle. Use completed candles so
     # repeated runs within the same hour compare stable, like-for-like windows.
     completed = ordered[:-1]
-    if len(completed) < 6:
+    if len(completed) < 7:
         raise ValueError("Coinbase returned insufficient completed candles for {}".format(symbol))
     latest = completed[-1]
     previous = completed[-2]
-    six_hours_ago = completed[-6]
+    six_hours_ago = completed[-7]
     try:
         previous_close = float(previous[4])
         latest_close = float(latest[4])

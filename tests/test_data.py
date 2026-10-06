@@ -8,6 +8,7 @@ def test_live_adapter_normalizes_public_responses():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.exchange.coinbase.com":
             return httpx.Response(200, json=[
+                [0, "93", "95", "93", "94", "6"],
                 [100, "94", "96", "94", "95", "7"],
                 [200, "95", "97", "95", "96", "8"],
                 [300, "96", "98", "96", "97", "9"],
@@ -21,7 +22,7 @@ def test_live_adapter_normalizes_public_responses():
     snapshot = load_live_snapshot(client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert [asset.symbol for asset in snapshot.assets] == ["BTC", "ETH"]
     assert snapshot.assets[0].price_change_1h == 0.04
-    assert snapshot.assets[0].price_change_6h == pytest.approx(104 / 95 - 1)
+    assert snapshot.assets[0].price_change_6h == pytest.approx(104 / 94 - 1)
     assert snapshot.assets[0].spot_volume_change_1h == 0.2
     assert snapshot.assets[0].funding_rate == 0.0001
     assert snapshot.assets[0].open_interest_change_1h is None
@@ -35,6 +36,6 @@ def test_live_adapter_rejects_short_candle_history():
     try:
         load_live_snapshot(client=client)
     except ValueError as exc:
-        assert "seven hourly candles" in str(exc)
+        assert "eight hourly candles" in str(exc)
     else:
         raise AssertionError("Short candle history should fail")
