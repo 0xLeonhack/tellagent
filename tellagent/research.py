@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import time
 from typing import Callable, List, Optional
 
 from .analyst import generate_demo_report
@@ -64,3 +65,26 @@ def outcome_summary(outcomes: List[ResearchOutcome]) -> str:
         headline = outcome.report.headline if outcome.report else outcome.judgment.selected_value
         lines.append("{} {}: {}".format(action, outcome.judgment.asset, headline))
     return "\n".join(lines)
+
+
+def run_research(
+    snapshot_loader: Callable[[], MarketSnapshot],
+    memory: JsonlMemory,
+    report_generator: Optional[ReportGenerator] = None,
+    asset: Optional[str] = None,
+    cycles: int = 1,
+    interval: float = 300.0,
+    on_cycle: Optional[Callable[[List[ResearchOutcome]], None]] = None,
+) -> int:
+    """Run the gated research loop; cycles=0 means continue until interrupted."""
+    if cycles < 0 or interval < 0:
+        raise ValueError("cycles and interval must be zero or greater")
+    completed = 0
+    while cycles == 0 or completed < cycles:
+        outcomes = process_snapshot(snapshot_loader(), memory, report_generator, asset)
+        if on_cycle:
+            on_cycle(outcomes)
+        completed += 1
+        if cycles == 0 or completed < cycles:
+            time.sleep(interval)
+    return completed

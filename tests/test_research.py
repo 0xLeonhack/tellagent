@@ -1,7 +1,7 @@
 from tellagent.analyst import generate_demo_report
 from tellagent.data import load_fixture
 from tellagent.memory import JsonlMemory
-from tellagent.research import process_snapshot
+from tellagent.research import process_snapshot, run_research
 
 
 def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_path):
@@ -33,3 +33,21 @@ def test_research_pipeline_skips_strong_model_for_uncertain_snapshot(tmp_path):
     assert calls == []
     assert outcomes[0].investigated is False
     assert outcomes[0].memory_record is None
+
+
+def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
+    snapshot = load_fixture()
+    memory = JsonlMemory(tmp_path / "memory.jsonl")
+    seen = []
+    completed = run_research(
+        lambda: snapshot,
+        memory,
+        generate_demo_report,
+        asset="ETH",
+        cycles=2,
+        interval=0,
+        on_cycle=lambda outcomes: seen.append(outcomes[0].investigated),
+    )
+    assert completed == 2
+    assert seen == [True, True]
+    assert len(memory.records()) == 2
