@@ -183,7 +183,7 @@ python -m tellagent demo --fixture
 
 在阶段 6 的离线闭环稳定之前，不进入实时 API 和真实模型开发。
 
-当前进度：阶段 0–9 已完成。后续修改仍需遵守小模块、先验证、再提交的流程，不在 Demo 分支继续加入数据库、Web、后台 worker 或多 Agent。
+当前进度：阶段 0–9 已完成，并已增加轻量 Observer、JSONL 判断流、纯函数事件策略和可选远程 Jev Provider。后续修改仍需遵守小模块、先验证、再提交的流程，不在 Demo 分支继续加入数据库、Web、后台 worker 或多 Agent。
 
 ## 6. 推荐模块边界
 

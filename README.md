@@ -83,6 +83,17 @@ Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计�
 
 判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前 Demo 不持久化事件，策略结果先以可测试模块存在。
 
+如果有可用的 Jev-compatible endpoint，可以启用真实远程 Observer：
+
+```bash
+export TELLAGENT_JEV_API_URL="https://your-jev-provider.example/v1/chat/completions"
+export TELLAGENT_JEV_API_KEY="your-key"
+export TELLAGENT_JEV_MODEL="your-jev-model"
+uv run python -m tellagent observe --live --provider jev --cycles 1
+```
+
+没有这些配置时，请使用默认的本地规则 Observer。它实现相同的 `MarketStateFrame → ContinuousJudgment` 契约，但不调用外部模型。
+
 运行测试：
 
 ```bash
