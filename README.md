@@ -108,7 +108,7 @@ uv run python -m tellagent research --cycles 1 --analyst remote
 uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 ```
 
-> **数据说明**　默认使用真实 Coinbase / Deribit 公共数据。实时模式能计算最近完成小时 K 线的价格与现货成交量变化，并读取 Deribit 当前 funding；由于没有本地历史行情，**open interest 变化会明确显示为缺失**，而不是被模型隐藏。
+> **数据说明**　默认使用真实 Coinbase / Deribit 公共数据。实时模式会读取 Deribit 当前 open interest，并从第二轮开始用进程内上一轮真实值计算短周期变化；进程重启后的第一轮没有基线，会明确显示为缺失。1 小时 OI 变化仍不伪造。
 
 ---
 
@@ -193,7 +193,7 @@ uv run pytest
 
 **当前 Demo 的限制**
 
-- 实时模式没有本地历史存储，无法计算 open interest 小时变化，会明确显示为缺失；
+- 实时模式没有历史数据库，只能在进程内计算相邻轮次的 open interest 变化；1 小时变化仍会明确显示为缺失；
 - 远程 Analyst / Jev 需要自行提供兼容接口；
 - 规则使用透明的演示阈值，尚未经过历史样本校准。
 
