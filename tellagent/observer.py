@@ -58,8 +58,9 @@ class RuleBasedJevObserver:
         oi_1h = frame.leverage_state.get("open_interest_change_1h")
         oi_interval = frame.leverage_state.get("open_interest_change_interval")
         funding = frame.leverage_state.get("funding_rate")
+        oi_signal, oi_threshold = _oi_signal(oi_1h, oi_interval)
         state, probabilities = _state_probabilities(price, volume, oi_1h, oi_interval)
-        conflicts = _conflict_roles(state, volume, oi_1h, funding)
+        conflicts = _conflict_roles(state, volume, oi_signal, oi_threshold, funding)
         priority = _priority(state, frame, conflicts)
         supporting = ["price_state", "spot_state", "leverage_state"] if state != "uncertain" else []
         now = datetime.now(timezone.utc)
@@ -166,14 +167,20 @@ def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
         raise ValueError("Jev selected_value is absent from probabilities")
 
 
+def _oi_signal(oi_1h: float | None, oi_interval: float | None) -> Tuple[float | None, float]:
+    """Return the OI change to use and its threshold, matching the metric layer."""
+    if oi_1h is not None:
+        return oi_1h, 0.08
+    return oi_interval, 0.015
+
+
 def _state_probabilities(
     price: float | None,
     volume: float | None,
     oi_1h: float | None,
     oi_interval: float | None,
 ) -> Tuple[str, Dict[str, float]]:
-    oi_signal = oi_1h if oi_1h is not None else oi_interval
-    oi_threshold = 0.08 if oi_1h is not None else 0.015
+    oi_signal, oi_threshold = _oi_signal(oi_1h, oi_interval)
     leverage = price is not None and price > 0.02 and oi_signal is not None and oi_signal > oi_threshold and (volume is None or volume < max(oi_signal * 0.75, 0.02))
     spot = price is not None and price > 0.02 and volume is not None and volume > 0.05 and (oi_signal is None or oi_signal <= oi_threshold)
     deleveraging = price is not None and price < -0.02 and oi_signal is not None and oi_signal < -oi_threshold
@@ -186,13 +193,19 @@ def _state_probabilities(
     return "uncertain", {"leverage_led": 0.12, "spot_confirmed": 0.18, "deleveraging": 0.08, "uncertain": 0.62}
 
 
-def _conflict_roles(state: str, volume: float | None, oi: float | None, funding: float | None) -> List[str]:
+def _conflict_roles(
+    state: str,
+    volume: float | None,
+    oi: float | None,
+    oi_threshold: float,
+    funding: float | None,
+) -> List[str]:
     roles: List[str] = []
     if state == "leverage_led" and volume is not None and volume > 0:
         roles.append("spot_confirmation")
     if state == "spot_confirmed" and funding is not None and funding > 0.0002:
         roles.append("funding_extreme")
-    if state == "spot_confirmed" and oi is not None and oi > 0.08:
+    if state == "spot_confirmed" and oi is not None and oi > oi_threshold:
         roles.append("leverage_expansion")
     return roles
 

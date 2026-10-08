@@ -1,5 +1,5 @@
-from tellagent.metrics import analysis_fields, analyze_asset
-from tellagent.schemas import AssetSnapshot
+from tellagent.metrics import analysis_fields, analyze_asset, build_deterministic_report
+from tellagent.schemas import AssetSnapshot, MarketSnapshot
 
 
 def test_leverage_led_scene():
@@ -58,3 +58,23 @@ def test_confidence_is_rounded_for_json_output():
         open_interest_change_1h=0.11,
     ))
     assert analysis_fields(result)[2] == 0.83
+
+
+def test_deterministic_report_uses_computed_fields_and_snapshot_metadata():
+    asset = AssetSnapshot(
+        symbol="ETH",
+        price_change_1h=0.042,
+        price_change_6h=0.067,
+        spot_volume_change_1h=0.012,
+        funding_rate=0.00024,
+        open_interest_change_1h=0.11,
+    )
+    snapshot = MarketSnapshot(as_of="2026-10-08T00:00:00Z", sources=["Coinbase", "Deribit"], assets=[asset])
+    report = build_deterministic_report(snapshot, asset)
+    assert report.asset == "ETH"
+    assert report.state == "leverage_led"
+    assert report.data_time == snapshot.as_of
+    assert report.sources == snapshot.sources
+    assert report.supporting_evidence
+    assert report.contradicting_evidence
+    assert report.invalidation_condition

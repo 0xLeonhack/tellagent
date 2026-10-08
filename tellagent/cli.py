@@ -6,6 +6,7 @@ import typer
 from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
 from .memory import JsonlMemory
+from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
 from .renderer import render_reports
 from .research import ResearchOutcome, outcome_summary, run_research
@@ -36,24 +37,28 @@ def research(
             raise ValueError("--provider must be rule or jev.")
         observer = RuleBasedJevObserver() if provider == "rule" else RemoteJevObserver.from_env()
         contextual_generator = None
+        report_generator = None
         if analyst == "remote":
             config = RemoteAnalystConfig.from_env()
             contextual_generator = lambda current, item, judgment, context: generate_remote_report(
                 current, item, config, memory_context=context, judgment=judgment
             )
+        else:
+            report_generator = build_deterministic_report
         memory = JsonlMemory(memory_path)
         live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
-            reports = [outcome.report for outcome in outcomes if outcome.report is not None]
-            if reports:
-                render_reports(reports)
+            rendered = [outcome for outcome in outcomes if outcome.report is not None]
+            if rendered:
+                render_reports(rendered)
             else:
                 typer.echo(outcome_summary(outcomes))
 
         run_research(
             live_loader,
             memory,
+            report_generator=report_generator,
             asset=asset,
             cycles=cycles,
             interval=interval,

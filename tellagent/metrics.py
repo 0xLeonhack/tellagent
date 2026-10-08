@@ -1,6 +1,6 @@
 from typing import List, Tuple
 
-from .schemas import AssetSnapshot, EvidenceBundle, SnapshotAnalysis
+from .schemas import AssetSnapshot, EvidenceBundle, MarketReport, MarketSnapshot, SnapshotAnalysis
 
 
 def _percent(value: float) -> str:
@@ -167,3 +167,22 @@ def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:
             2,
         )
     return headline, invalidation, confidence
+
+
+def build_deterministic_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketReport:
+    """Build a report from deterministic fields, used when no strong model is configured."""
+    analysis = analyze_asset(asset)
+    headline, invalidation, confidence = analysis_fields(analysis)
+    return MarketReport(
+        asset=asset.symbol,
+        metrics=asset,
+        headline=headline,
+        state=analysis.suggested_state,
+        confidence=confidence,
+        supporting_evidence=analysis.evidence.supporting,
+        contradicting_evidence=analysis.evidence.contradicting,
+        missing_evidence=analysis.evidence.missing,
+        invalidation_condition=invalidation,
+        data_time=snapshot.as_of,
+        sources=snapshot.sources,
+    )
