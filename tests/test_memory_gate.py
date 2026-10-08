@@ -1,13 +1,13 @@
 import json
 
-from tellagent.data import load_fixture
 from tellagent.gate import should_investigate
 from tellagent.memory import JsonlMemory, memory_summary
 from tellagent.observer import RuleBasedJevObserver, build_state_frame
+from helpers import market_snapshot
 
 
 def test_memory_appends_and_retrieves_related_context(tmp_path):
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     judgment = RuleBasedJevObserver().judge(build_state_frame(snapshot, snapshot.assets[1]))
     memory = JsonlMemory(tmp_path / "memory.jsonl")
     memory.append(judgment, "ETH 杠杆增长快于现货", tags=["leverage", "spot"])
@@ -18,6 +18,6 @@ def test_memory_appends_and_retrieves_related_context(tmp_path):
 
 
 def test_gate_passes_significant_judgment():
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     judgment = RuleBasedJevObserver().judge(build_state_frame(snapshot, snapshot.assets[1]))
     assert should_investigate(judgment)

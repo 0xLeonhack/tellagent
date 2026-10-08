@@ -1,7 +1,7 @@
 [project]
 name = "tellagent"
 version = "0.1.0"
-description = "A lightweight BTC/ETH market contradiction demo"
+description = "A lightweight BTC/ETH continuous market research agent"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

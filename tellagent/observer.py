@@ -10,7 +10,7 @@ from .metrics import analyze_asset
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketStateFrame, MarketSnapshot
 
 
-QUESTION_SET_VERSION = "demo.observer.v1"
+QUESTION_SET_VERSION = "tellagent.observer.v1"
 
 
 def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketStateFrame:
@@ -37,7 +37,7 @@ def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketS
 
 
 class RuleBasedJevObserver:
-    """Local Jev-compatible Observer for the demo.
+    """Local Jev-compatible Observer.
 
     It emits the structured judgment contract planned for Jev, using
     deterministic rules until an external Jev provider is available.

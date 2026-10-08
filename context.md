@@ -10,11 +10,11 @@ tellagent 只研究 BTC、ETH 和 ETH/BTC，目标是发现跨来源证据冲突
 
 - 使用场景：现场演示和个人本地研究。
 - 入口：单个 Python CLI。
-- 默认数据：固定 Fixture；可选 Coinbase/Deribit 公共 API。
-- 默认分析：确定性 Fake Analyst；可选 OpenAI-compatible 远程 Analyst。
-- 存储：无数据库，不保存历史状态。
+- 默认数据：Coinbase/Deribit 公共 API。
+- 默认分析：本地规则 Jev Observer；强 Analyst 使用 OpenAI-compatible 远程模型。
+- 存储：门控后的 JSONL 记忆；不使用数据库。
 - 结果：研究报告，不是交易信号。
-- 明确不做：后台 worker、Web、多 Agent、链上数据和自动复盘。
+- 明确不做：Web、多 Agent、链上数据和自动复盘。
 - 记忆方案：使用门控后的 append-only JSONL 和记忆检索，不把数据库作为实时分析前置条件。
 
 ## Demo 之后的长期方向

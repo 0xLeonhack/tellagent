@@ -79,7 +79,7 @@ class MarketStateFrame(BaseModel):
     anomalies: List[str] = Field(default_factory=list)
     missing_inputs: List[str] = Field(default_factory=list)
     quality_summary: Dict[str, str]
-    schema_version: str = "demo.market-state.v1"
+    schema_version: str = "tellagent.market-state.v1"
 
 
 class ContinuousJudgment(BaseModel):
@@ -90,7 +90,7 @@ class ContinuousJudgment(BaseModel):
     frame_id: str
     asset: str
     as_of: str
-    question_set_version: str = "demo.observer.v1"
+    question_set_version: str = "tellagent.observer.v1"
     selected_value: str
     probabilities: Dict[str, float]
     confidence: float = Field(ge=0, le=1)

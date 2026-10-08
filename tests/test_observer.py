@@ -3,12 +3,12 @@ import json
 import httpx
 import pytest
 
-from tellagent.data import load_fixture
 from tellagent.observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
+from helpers import market_snapshot
 
 
 def test_observer_emits_structured_leverage_judgment():
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[1])
     judgment = RuleBasedJevObserver().judge(frame)
     assert judgment.provider == "rule-based-jev"
@@ -18,7 +18,7 @@ def test_observer_emits_structured_leverage_judgment():
 
 
 def test_observer_marks_missing_oi_as_watch():
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     asset = snapshot.assets[0].model_copy(update={"open_interest_change_1h": None})
     frame = build_state_frame(snapshot, asset)
     judgment = RuleBasedJevObserver().judge(frame)
@@ -41,7 +41,7 @@ def test_remote_jev_validates_probability_contract():
         }
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content)}}]})
 
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[1])
     judgment = RemoteJevObserver("https://jev.test/judge", "key", "jev-test").judge(
         frame, client=httpx.Client(transport=httpx.MockTransport(handler))
@@ -59,7 +59,7 @@ def test_remote_jev_rejects_bad_probability_sum():
         }
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content)}}]})
 
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[0])
     with pytest.raises(ValueError, match="probabilities must sum"):
         RemoteJevObserver("https://jev.test/judge", "key", "jev-test").judge(

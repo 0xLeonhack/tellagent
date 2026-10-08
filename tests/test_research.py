@@ -1,16 +1,21 @@
-from tellagent.analyst import generate_demo_report
-from tellagent.data import load_fixture
 from tellagent.memory import JsonlMemory
 from tellagent.research import process_snapshot, run_research
+from tellagent.schemas import MarketReport
+from helpers import market_snapshot
 
 
 def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_path):
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     calls = []
 
     def generator(snapshot, asset):
         calls.append(asset.symbol)
-        return generate_demo_report(snapshot, asset)
+        return MarketReport(
+            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_led",
+            confidence=0.8, supporting_evidence=["test"], contradicting_evidence=["counter"],
+            missing_evidence=[], invalidation_condition="test", data_time=snapshot.as_of,
+            sources=snapshot.sources,
+        )
 
     outcomes = process_snapshot(snapshot, JsonlMemory(tmp_path / "memory.jsonl"), generator, asset="ETH")
     assert len(calls) == 1
@@ -21,7 +26,7 @@ def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_p
 
 
 def test_research_pipeline_skips_strong_model_for_uncertain_snapshot(tmp_path):
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     asset = snapshot.assets[0].model_copy(update={"open_interest_change_1h": None})
     snapshot = snapshot.model_copy(update={"assets": [asset]})
     calls = []
@@ -36,13 +41,18 @@ def test_research_pipeline_skips_strong_model_for_uncertain_snapshot(tmp_path):
 
 
 def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     memory = JsonlMemory(tmp_path / "memory.jsonl")
     seen = []
     completed = run_research(
         lambda: snapshot,
         memory,
-        generate_demo_report,
+        lambda snapshot, asset: MarketReport(
+            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_led",
+            confidence=0.8, supporting_evidence=["test"], contradicting_evidence=["counter"],
+            missing_evidence=[], invalidation_condition="test", data_time=snapshot.as_of,
+            sources=snapshot.sources,
+        ),
         asset="ETH",
         cycles=2,
         interval=0,

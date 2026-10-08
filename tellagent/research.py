@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import time
 from typing import Callable, List, Optional
 
-from .analyst import generate_demo_report
 from .gate import should_investigate
 from .memory import JsonlMemory, memory_summary
 from .observer import RuleBasedJevObserver, build_state_frame
@@ -11,6 +10,7 @@ from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnap
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
 ContextualReportGenerator = Callable[[MarketSnapshot, AssetSnapshot, str], MarketReport]
+Observer = RuleBasedJevObserver
 
 
 @dataclass(frozen=True)
@@ -27,9 +27,10 @@ def process_snapshot(
     report_generator: Optional[ReportGenerator] = None,
     asset: Optional[str] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
+    observer: Optional[Observer] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
-    observer = RuleBasedJevObserver()
+    observer = observer or RuleBasedJevObserver()
     records = memory.records()
     selected = [item for item in snapshot.assets if not asset or item.symbol.upper() == asset.upper()]
     if not selected:
@@ -82,6 +83,7 @@ def run_research(
     memory: JsonlMemory,
     report_generator: Optional[ReportGenerator] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
+    observer: Optional[Observer] = None,
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -93,7 +95,7 @@ def run_research(
     completed = 0
     while cycles == 0 or completed < cycles:
         outcomes = process_snapshot(
-            snapshot_loader(), memory, report_generator, asset, contextual_report_generator
+            snapshot_loader(), memory, report_generator, asset, contextual_report_generator, observer
         )
         if on_cycle:
             on_cycle(outcomes)

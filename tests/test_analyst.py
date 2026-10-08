@@ -4,12 +4,12 @@ import httpx
 import pytest
 
 from tellagent.analyst import RemoteAnalystConfig, generate_remote_report
-from tellagent.data import load_fixture
 from tellagent.metrics import analyze_asset
+from helpers import market_snapshot
 
 
 def test_remote_analyst_validates_and_trusts_snapshot_metadata():
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     asset = snapshot.assets[0]
     evidence = analyze_asset(asset).evidence
 
@@ -63,7 +63,7 @@ def test_remote_analyst_rejects_invented_evidence():
             "choices": [{"message": {"content": json.dumps(content)}}]
         })
 
-    snapshot = load_fixture()
+    snapshot = market_snapshot()
     with pytest.raises(ValueError, match="invented supporting evidence"):
         generate_remote_report(
             snapshot,

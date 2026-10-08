@@ -2,7 +2,7 @@
 
 > 面向 BTC/ETH 的市场矛盾检测器：持续整理证据，发现状态变化，并明确说明什么会推翻当前判断。
 
-tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现货、Deribit 衍生品（后续再加入链上数据）整理成结构化市场快照，再由受约束的 agent 生成一份包含正向、反向和缺失证据的研究报告。
+tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现货和 Deribit 衍生品整理成结构化市场快照，由 Jev 低成本筛选，再交给受约束的强模型生成包含正向、反向和缺失证据的研究报告。
 
 它不是交易机器人，也不承诺预测下一根 K 线。它首先要回答的是：
 
@@ -12,43 +12,21 @@ tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现
 
 ## 当前状态
 
-**Hackathon Demo 已完成。** 当前版本包含固定 Fixture、具名演示场景、Coinbase/Deribit 公共 API、确定性指标、Fake Analyst、可选远程 Analyst、Pydantic 校验、Rich/JSON 输出和自动测试。
+当前版本是一个真实数据驱动的持续研究 Demo：Coinbase/Deribit 公共 API、确定性指标、Jev Observer、门控、远程 Analyst、JSONL 记忆、Rich 报告和自动测试均已实现。
 
-安装依赖并运行离线 Demo：
+安装依赖：
 
 ```bash
 uv sync --dev
-uv run python -m tellagent demo --fixture
 ```
 
-也可以只查看 ETH：
+运行一次真实数据研究：
 
 ```bash
-uv run python -m tellagent demo --fixture --asset ETH
+uv run python -m tellagent research --cycles 1 --analyst remote
 ```
 
-现场演示可以直接切换预置场景：
-
-```bash
-uv run python -m tellagent demo --scenario leverage
-uv run python -m tellagent demo --scenario spot
-```
-
-需要给脚本或后续界面使用时，可以输出经过校验的 JSON：
-
-```bash
-uv run python -m tellagent demo --fixture --json
-```
-
-Fixture 模式不依赖网络，也是现场演示的默认模式。
-
-使用公共 API 获取当前快照：
-
-```bash
-uv run python -m tellagent demo --live
-```
-
-实时模式目前能计算 Coinbase 最近两根小时 K 线的价格和现货成交量变化，并读取 Deribit 当前 funding。由于还没有本地历史存储，open interest 变化会明确显示为缺失；网络或 API 失败时请使用 `--fixture` 离线演示。
+默认使用真实 Coinbase/Deribit 公共数据。当前实时模式能计算 Coinbase 最近完成小时 K 线的价格和现货成交量变化，并读取 Deribit 当前 funding；由于没有本地历史行情，open interest 变化会明确显示为缺失。
 
 可选的远程 Analyst 使用 OpenAI-compatible JSON API。配置后运行：
 
@@ -56,45 +34,23 @@ uv run python -m tellagent demo --live
 export TELLAGENT_MODEL_API_URL="https://your-provider.example/v1/chat/completions"
 export TELLAGENT_MODEL_API_KEY="your-key"
 export TELLAGENT_MODEL_NAME="your-model"
-uv run python -m tellagent demo --fixture --analyst remote
+uv run python -m tellagent research --cycles 1 --analyst remote
 ```
 
-远程模型只接收已经计算好的快照和证据，只能选择代码生成的证据，不能覆盖资产、指标、时间或来源。未配置这些变量时，`demo` 使用本地 Fake Analyst。
-
-运行一次 Observer，输出一行 `ContinuousJudgment` JSON：
-
-```bash
-uv run python -m tellagent observe --fixture
-```
-
-有限轮询两次：
-
-```bash
-uv run python -m tellagent observe --fixture --cycles 2 --interval 1
-```
-
-持续运行直到按下 `Ctrl-C`：
-
-```bash
-uv run python -m tellagent observe --live --cycles 0 --interval 300
-```
-
-Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计契约兼容的结构化判断；真实 Jev provider 仍可在这个接口上替换。
-
-判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前不要求数据库：重要判断会追加到 `.tellagent/memory.jsonl`，并按资产、状态、标签和关键词检索相近上下文。
+远程模型只接收已经计算好的快照、Jev 判断和相近记忆，只能选择代码生成的证据，不能覆盖资产、指标、时间或来源。
 
 研究管线会在 Jev 门控通过后才调用强 Analyst，并只把通过门控的上下文写入 JSONL 记忆：
 
 ```bash
-uv run python -m tellagent research --fixture --scenario leverage --analyst demo
+uv run python -m tellagent research --cycles 1 --analyst remote
 ```
 
-使用真实 DeepSeek 或其他 OpenAI-compatible Analyst 时，把 `--analyst remote` 与已有的 `TELLAGENT_MODEL_*` 环境变量一起使用。默认 `--analyst none` 只运行 Jev 门控和记忆写入，不调用强模型。
+使用真实 DeepSeek 或其他 OpenAI-compatible Analyst 时，把 `--analyst remote` 与已有的 `TELLAGENT_MODEL_*` 环境变量一起使用。使用 `--analyst none` 可以只运行 Jev 门控和记忆写入。
 
 持续研究循环：
 
 ```bash
-uv run python -m tellagent research --live --analyst remote --cycles 0 --interval 300
+uv run python -m tellagent research --analyst remote --cycles 0 --interval 300
 ```
 
 `--cycles 0` 会持续运行直到 `Ctrl-C`。当前记忆是轻量 JSONL，不是向量数据库；它只保留通过门控的上下文，不保存每一帧原始行情。
@@ -105,7 +61,7 @@ uv run python -m tellagent research --live --analyst remote --cycles 0 --interva
 export TELLAGENT_JEV_API_URL="https://your-jev-provider.example/v1/chat/completions"
 export TELLAGENT_JEV_API_KEY="your-key"
 export TELLAGENT_JEV_MODEL="your-jev-model"
-uv run python -m tellagent observe --live --provider jev --cycles 1
+uv run python -m tellagent research --provider jev --analyst remote --cycles 1
 ```
 
 没有这些配置时，请使用默认的本地规则 Observer。它实现相同的 `MarketStateFrame → ContinuousJudgment` 契约，但不调用外部模型。
@@ -116,18 +72,16 @@ uv run python -m tellagent observe --live --provider jev --cycles 1
 uv run pytest
 ```
 
-## Demo 完成状态
+## 当前完成状态
 
 - [x] Python 3.12 隔离环境与锁定依赖
-- [x] BTC/ETH 固定 Fixture
-- [x] 杠杆主导与现货确认场景
+- [x] BTC/ETH 真实公共数据适配
 - [x] 确定性指标和证据分类
-- [x] 本地 Fake Analyst
-- [x] 可选 OpenAI-compatible Analyst
-- [x] Coinbase/Deribit 公共数据适配
-- [x] Rich 终端报告和 JSON 输出
+- [x] 本地规则 Jev Observer 和可选远程 Jev Provider
+- [x] OpenAI-compatible Analyst
+- [x] Rich 终端报告
 - [x] 缺失数据、非法输入和远程响应校验
-- [x] 离线 CLI 集成测试
+- [x] Jev 门控、JSONL 记忆和持续研究循环
 
 Demo 的已知限制：实时模式没有本地历史存储，因此不能计算 open interest 的小时变化，会明确显示为缺失；远程 Analyst 需要用户自行提供兼容接口；当前规则使用透明的演示阈值，尚未经过历史样本校准。
 
@@ -147,19 +101,19 @@ tellagent 的重点不是再做一个图表终端，而是把“事实 → 判�
 Demo 只输出 BTC 和 ETH 报告，优先使用 Coinbase 现货与 Deribit 永续数据，完成一次快照分析。ETH/BTC 相对关系保留在长期设计中，不进入当前 Demo：
 
 ```text
-fixture / API
+Coinbase / Deribit
     ↓
-数据适配器
+确定性指标计算
     ↓
-确定性指标计算（收益率、成交量、funding、OI、简单异常）
+MarketStateFrame
     ↓
-MarketSnapshot JSON
+Jev Observer
     ↓
-一个受约束的 Market Analyst agent
+确定性 Gate
     ↓
-校验后的 Report JSON
+DeepSeek / 强 Analyst
     ↓
-CLI 报告
+JSONL 相近记忆 + Rich 报告
 ```
 
 报告至少包含：数据时间与来源、关键指标、事实摘要、市场状态、支持证据、反向证据、缺失数据和失效条件。数据不足时必须明确说“不确定”，不能编造原因。
@@ -180,7 +134,7 @@ Agent 只能阅读已经计算好的 JSON，判断市场状态、组织证据并
 
 ## 计划中的长期架构
 
-MVP 验证后，再逐步恢复持续运行能力：
+当前代码已实现轻量持续研究能力；下面是仍未实现的长期系统：
 
 ```text
 采集器 → 不可变原始观测 → 特征引擎 → MarketStateFrame
@@ -189,7 +143,7 @@ MVP 验证后，再逐步恢复持续运行能力：
                                       ↓
                               ContinuousJudgment
                                       ↓
-                              确定性 EventPolicy
+                              确定性 Jev Gate
                                       ↓
                                冻结 EvidenceBundle
                                       ↓
@@ -231,9 +185,6 @@ tellagent/
   analyst.py
   renderer.py
   schemas.py
-  fixtures/demo_snapshot.json
-  fixtures/demo_leverage_led.json
-  fixtures/demo_spot_confirmed.json
 tests/
 ```
 
@@ -242,7 +193,7 @@ tests/
 MVP 只有在以下条件同时满足时才算完成：
 
 - 一条命令可以完成演示；
-- 无网络时 fixture 模式仍然可用；
+- 真实数据采集失败时必须明确报错，不得回退到虚构行情；
 - 报告同时展示支持证据和反向证据；
 - 指标在 agent 调用前已经计算完成；
 - 缺失数据会降低确定性，而不是被模型隐藏；
