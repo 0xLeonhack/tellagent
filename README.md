@@ -61,11 +61,13 @@ Observer 输出四种市场状态之一：
 uv sync --dev
 ```
 
-**无需任何密钥**即可跑通完整管线（只运行数据采集 + 确定性指标 + Jev 门控 + 记忆写入）：
+**无需任何密钥**即可运行：默认的 Jev Observer 是本地规则实现（`--provider rule`），只做确定性判断，不调用任何外部模型，所以不需要 key；`--analyst none` 只是跳过最贵的强 Analyst 这一步。
 
 ```bash
 uv run python -m tellagent research --cycles 1 --analyst none
 ```
+
+这一路径会真实采集 Coinbase/Deribit 数据、计算确定性指标、用本地规则做 Jev 判断与门控，并写入 JSONL 记忆，只是不生成强模型的成文报告。需要密钥的只有两个**可选**远程 Provider：远程 Analyst（`--analyst remote`）和远程 Jev（`--provider jev`）。
 
 默认使用真实 Coinbase/Deribit 公共数据。当前实时模式能计算 Coinbase 最近完成小时 K 线的价格与现货成交量变化，并读取 Deribit 当前 funding；由于没有本地历史行情，open interest 变化会明确显示为**缺失**，而不是被模型隐藏。
 
