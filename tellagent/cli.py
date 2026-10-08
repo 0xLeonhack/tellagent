@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -6,6 +7,7 @@ import typer
 from .analyst import RemoteAnalystConfig, generate_demo_report, generate_remote_report
 from .data import DEFAULT_FIXTURE, SCENARIO_FIXTURES, load_fixture, load_live_snapshot
 from .renderer import render_json, render_reports
+from .stream import load_observation_snapshot, run_observer
 
 app = typer.Typer(add_completion=False, help="BTC/ETH market contradiction demo")
 
@@ -57,3 +59,29 @@ def demo(
         typer.echo(render_json(reports))
     else:
         render_reports(reports)
+
+
+@app.command()
+def observe(
+    fixture: bool = typer.Option(True, "--fixture/--live", help="Use the offline fixture."),
+    path: Optional[Path] = typer.Option(None, "--path", help="Override fixture path."),
+    scenario: str = typer.Option("default", "--scenario", help="Fixture scenario."),
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only observe one asset."),
+    cycles: int = typer.Option(1, "--cycles", min=0, help="Iterations; 0 runs until interrupted."),
+    interval: float = typer.Option(300.0, "--interval", min=0.0, help="Seconds between iterations."),
+    timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Live API timeout in seconds."),
+    output: Optional[Path] = typer.Option(None, "--output", help="Write JSONL to a file."),
+) -> None:
+    """Run the Observer and emit one ContinuousJudgment JSON object per line."""
+    try:
+        loader = lambda: load_observation_snapshot(
+            fixture=fixture, scenario=scenario, path=path, timeout=timeout
+        )
+        stream = output.open("a", encoding="utf-8") if output else None
+        try:
+            run_observer(loader, asset=asset, cycles=cycles, interval=interval, output=stream or sys.stdout)
+        finally:
+            if stream:
+                stream.close()
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc

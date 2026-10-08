@@ -61,6 +61,26 @@ uv run python -m tellagent demo --fixture --analyst remote
 
 远程模型只接收已经计算好的快照和证据，只能选择代码生成的证据，不能覆盖资产、指标、时间或来源。未配置这些变量时，`demo` 使用本地 Fake Analyst。
 
+运行一次 Observer，输出一行 `ContinuousJudgment` JSON：
+
+```bash
+uv run python -m tellagent observe --fixture
+```
+
+有限轮询两次：
+
+```bash
+uv run python -m tellagent observe --fixture --cycles 2 --interval 1
+```
+
+持续运行直到按下 `Ctrl-C`：
+
+```bash
+uv run python -m tellagent observe --live --cycles 0 --interval 300
+```
+
+Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计契约兼容的结构化判断；真实 Jev provider 仍可在这个接口上替换。
+
 运行测试：
 
 ```bash
