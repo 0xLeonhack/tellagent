@@ -63,3 +63,43 @@ class SnapshotAnalysis(BaseModel):
     evidence: EvidenceBundle
     suggested_state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
     quality_notes: List[str] = Field(default_factory=list)
+
+
+class MarketStateFrame(BaseModel):
+    """Compact, replayable input presented to an Observer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_id: str
+    asset: str
+    as_of: str
+    price_state: Dict[str, Optional[float]]
+    spot_state: Dict[str, Optional[float]]
+    leverage_state: Dict[str, Optional[float]]
+    anomalies: List[str] = Field(default_factory=list)
+    missing_inputs: List[str] = Field(default_factory=list)
+    quality_summary: Dict[str, str]
+    schema_version: str = "demo.market-state.v1"
+
+
+class ContinuousJudgment(BaseModel):
+    """One structured Observer answer for one MarketStateFrame."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    frame_id: str
+    asset: str
+    as_of: str
+    question_set_version: str = "demo.observer.v1"
+    selected_value: str
+    probabilities: Dict[str, float]
+    confidence: float = Field(ge=0, le=1)
+    supporting_roles: List[str] = Field(default_factory=list)
+    contradicting_roles: List[str] = Field(default_factory=list)
+    missing_roles: List[str] = Field(default_factory=list)
+    research_priority: Literal["silent", "watch", "significant", "urgent"]
+    invalidation_conditions: List[str] = Field(default_factory=list)
+    provider: str
+    model_version: str
+    latency_ms: int = Field(ge=0)
+    created_at: str
