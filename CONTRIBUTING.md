@@ -6,10 +6,10 @@
 
 按顺序读这几份文档：
 
-1. [`context.md`](context.md) —— 当前决策、术语和不可违背的边界；
-2. [`prd.md`](prd.md) 与 [`spec.md`](spec.md) —— 用户体验与数据契约；
-3. [`DEVELOPMENT.md`](DEVELOPMENT.md) —— 当前开发流程与验收标准；
-4. [`plan.md`](plan.md) / [`ARCHITECTURE.md`](ARCHITECTURE.md) —— 按当前阶段选读。
+1. [`context.md`](docs/context.md) —— 当前决策、术语和不可违背的边界；
+2. [`prd.md`](docs/prd.md) 与 [`spec.md`](docs/spec.md) —— 用户体验与数据契约；
+3. [`DEVELOPMENT.md`](docs/DEVELOPMENT.md) —— 当前开发流程与验收标准；
+4. [`plan.md`](docs/plan.md) / [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) —— 按当前阶段选读。
 
 若你的改动会扩大范围（见下），请先开 Issue 讨论，不要直接提大 PR。
 
