@@ -10,6 +10,7 @@ from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnap
 
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
+ContextualReportGenerator = Callable[[MarketSnapshot, AssetSnapshot, str], MarketReport]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ def process_snapshot(
     memory: JsonlMemory,
     report_generator: Optional[ReportGenerator] = None,
     asset: Optional[str] = None,
+    contextual_report_generator: Optional[ContextualReportGenerator] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
     observer = RuleBasedJevObserver()
@@ -38,7 +40,15 @@ def process_snapshot(
         judgment = observer.judge(frame)
         previous = _latest_judgment(records, item.symbol)
         investigate = should_investigate(judgment, previous, event_open=previous is not None)
-        report = report_generator(snapshot, item) if investigate and report_generator else None
+        related_context = memory_summary(
+            memory.related(item.symbol, state=judgment.selected_value, tags=judgment.contradicting_roles)
+        )
+        if investigate and contextual_report_generator:
+            report = contextual_report_generator(snapshot, item, related_context)
+        elif investigate and report_generator:
+            report = report_generator(snapshot, item)
+        else:
+            report = None
         summary = report.headline if report else "{}: {}".format(judgment.selected_value, judgment.research_priority)
         memory_record = None
         if investigate:
@@ -71,6 +81,7 @@ def run_research(
     snapshot_loader: Callable[[], MarketSnapshot],
     memory: JsonlMemory,
     report_generator: Optional[ReportGenerator] = None,
+    contextual_report_generator: Optional[ContextualReportGenerator] = None,
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -81,7 +92,9 @@ def run_research(
         raise ValueError("cycles and interval must be zero or greater")
     completed = 0
     while cycles == 0 or completed < cycles:
-        outcomes = process_snapshot(snapshot_loader(), memory, report_generator, asset)
+        outcomes = process_snapshot(
+            snapshot_loader(), memory, report_generator, asset, contextual_report_generator
+        )
         if on_cycle:
             on_cycle(outcomes)
         completed += 1

@@ -127,11 +127,15 @@ def research(
         if analyst not in {"none", "demo", "remote"}:
             raise ValueError("--analyst must be none, demo, or remote.")
         generator = None
+        contextual_generator = None
         if analyst == "demo":
             generator = generate_demo_report
         elif analyst == "remote":
             config = RemoteAnalystConfig.from_env()
-            generator = lambda current, item: generate_remote_report(current, item, config)
+            generator = None
+            contextual_generator = lambda current, item, context: generate_remote_report(
+                current, item, config, memory_context=context
+            )
         memory = JsonlMemory(memory_path)
         run_research(
             lambda: load_observation_snapshot(
@@ -142,6 +146,7 @@ def research(
             asset=asset,
             cycles=cycles,
             interval=interval,
+            contextual_report_generator=contextual_generator,
             on_cycle=lambda outcomes: typer.echo(outcome_summary(outcomes)),
         )
     except (OSError, ValueError) as exc:

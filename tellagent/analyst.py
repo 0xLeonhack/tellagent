@@ -52,6 +52,7 @@ def generate_remote_report(
     asset: AssetSnapshot,
     config: RemoteAnalystConfig,
     client: Optional[httpx.Client] = None,
+    memory_context: str = "",
 ) -> MarketReport:
     """Ask an OpenAI-compatible endpoint to organize precomputed evidence."""
     analysis = analyze_asset(asset)
@@ -60,6 +61,7 @@ def generate_remote_report(
         "supporting_evidence": analysis.evidence.supporting,
         "contradicting_evidence": analysis.evidence.contradicting,
         "missing_evidence": analysis.evidence.missing,
+        "related_memory": memory_context,
     }
     payload = {
         "model": config.model,

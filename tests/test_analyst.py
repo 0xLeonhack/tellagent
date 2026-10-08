@@ -14,6 +14,9 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
     evidence = analyze_asset(asset).evidence
 
     def handler(request: httpx.Request) -> httpx.Response:
+        request_body = json.loads(request.content)
+        user_facts = json.loads(request_body["messages"][1]["content"])
+        assert user_facts["related_memory"] == "prior context"
         body = {
             "choices": [{
                 "message": {
@@ -37,6 +40,7 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
         asset,
         RemoteAnalystConfig("https://model.test/chat", "test-key", "test-model"),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
+        memory_context="prior context",
     )
     assert report.asset == "BTC"
     assert report.data_time == snapshot.as_of
