@@ -6,7 +6,7 @@ from typing import Optional
 import httpx
 
 from .metrics import analyze_asset
-from .schemas import AnalystResult, AssetSnapshot, MarketReport, MarketSnapshot
+from .schemas import AnalystResult, AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot
 
 @dataclass(frozen=True)
 class RemoteAnalystConfig:
@@ -34,6 +34,7 @@ def generate_remote_report(
     config: RemoteAnalystConfig,
     client: Optional[httpx.Client] = None,
     memory_context: str = "",
+    judgment: Optional[ContinuousJudgment] = None,
 ) -> MarketReport:
     """Ask an OpenAI-compatible endpoint to organize precomputed evidence."""
     analysis = analyze_asset(asset)
@@ -42,6 +43,7 @@ def generate_remote_report(
         "supporting_evidence": analysis.evidence.supporting,
         "contradicting_evidence": analysis.evidence.contradicting,
         "missing_evidence": analysis.evidence.missing,
+        "jev_judgment": judgment.model_dump() if judgment else None,
         "related_memory": memory_context,
     }
     payload = {

@@ -5,6 +5,7 @@ import pytest
 
 from tellagent.analyst import RemoteAnalystConfig, generate_remote_report
 from tellagent.metrics import analyze_asset
+from tellagent.observer import RuleBasedJevObserver, build_state_frame
 from helpers import market_snapshot
 
 
@@ -17,6 +18,7 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
         request_body = json.loads(request.content)
         user_facts = json.loads(request_body["messages"][1]["content"])
         assert user_facts["related_memory"] == "prior context"
+        assert user_facts["jev_judgment"]["selected_value"] == "leverage_led"
         body = {
             "choices": [{
                 "message": {
@@ -41,6 +43,7 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
         RemoteAnalystConfig("https://model.test/chat", "test-key", "test-model"),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
         memory_context="prior context",
+        judgment=RuleBasedJevObserver().judge(build_state_frame(snapshot, asset)),
     )
     assert report.asset == "BTC"
     assert report.data_time == snapshot.as_of

@@ -38,8 +38,8 @@ def research(
         contextual_generator = None
         if analyst == "remote":
             config = RemoteAnalystConfig.from_env()
-            contextual_generator = lambda current, item, context: generate_remote_report(
-                current, item, config, memory_context=context
+            contextual_generator = lambda current, item, judgment, context: generate_remote_report(
+                current, item, config, memory_context=context, judgment=judgment
             )
         memory = JsonlMemory(memory_path)
         live_loader = RollingLiveLoader(timeout=timeout)

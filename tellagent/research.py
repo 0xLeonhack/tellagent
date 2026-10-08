@@ -9,7 +9,9 @@ from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnap
 
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
-ContextualReportGenerator = Callable[[MarketSnapshot, AssetSnapshot, str], MarketReport]
+ContextualReportGenerator = Callable[
+    [MarketSnapshot, AssetSnapshot, ContinuousJudgment, str], MarketReport
+]
 Observer = RuleBasedJevObserver
 
 
@@ -45,7 +47,7 @@ def process_snapshot(
             memory.related(item.symbol, state=judgment.selected_value, tags=judgment.contradicting_roles)
         )
         if investigate and contextual_report_generator:
-            report = contextual_report_generator(snapshot, item, related_context)
+            report = contextual_report_generator(snapshot, item, judgment, related_context)
         elif investigate and report_generator:
             report = report_generator(snapshot, item)
         else:
