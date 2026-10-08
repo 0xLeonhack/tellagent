@@ -11,6 +11,8 @@ class AssetSnapshot(BaseModel):
     price_change_6h: Optional[float] = None
     spot_volume_change_1h: Optional[float] = None
     funding_rate: Optional[float] = None
+    open_interest: Optional[float] = None
+    open_interest_change_interval: Optional[float] = None
     open_interest_change_1h: Optional[float] = None
 
 

@@ -4,7 +4,7 @@ from typing import Optional
 import typer
 
 from .analyst import RemoteAnalystConfig, generate_remote_report
-from .data import load_live_snapshot
+from .data import RollingLiveLoader
 from .memory import JsonlMemory
 from .observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
 from .renderer import render_reports
@@ -42,6 +42,7 @@ def research(
                 current, item, config, memory_context=context
             )
         memory = JsonlMemory(memory_path)
+        live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
             reports = [outcome.report for outcome in outcomes if outcome.report is not None]
@@ -51,7 +52,7 @@ def research(
                 typer.echo(outcome_summary(outcomes))
 
         run_research(
-            lambda: load_live_snapshot(timeout=timeout),
+            live_loader,
             memory,
             asset=asset,
             cycles=cycles,

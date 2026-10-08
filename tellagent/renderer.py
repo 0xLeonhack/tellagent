@@ -24,6 +24,8 @@ def render_reports(reports: Iterable[MarketReport], console: Console = None) -> 
         console.print("  • 价格变化 6h: {}".format(_format_percent(metrics.price_change_6h)))
         console.print("  • 现货成交量变化 1h: {}".format(_format_percent(metrics.spot_volume_change_1h)))
         console.print("  • funding rate: {}".format(_format_percent(metrics.funding_rate, digits=4)))
+        console.print("  • open interest: {}".format(_format_number(metrics.open_interest)))
+        console.print("  • open interest 本轮变化: {}".format(_format_percent(metrics.open_interest_change_interval)))
         console.print("  • open interest 变化 1h: {}".format(_format_percent(metrics.open_interest_change_1h)))
         console.print("[bold]判断[/bold]  {}".format(report.headline))
         _print_evidence(console, "支持证据", report.supporting_evidence, "green")
@@ -51,3 +53,9 @@ def _format_percent(value, digits: int = 2) -> str:
     if value is None:
         return "缺失"
     return ("{:+." + str(digits) + "f}%").format(value * 100)
+
+
+def _format_number(value) -> str:
+    if value is None:
+        return "缺失"
+    return "{:,.2f}".format(value)

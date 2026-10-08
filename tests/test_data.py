@@ -1,7 +1,8 @@
 import httpx
 import pytest
 
-from tellagent.data import load_live_snapshot
+from tellagent.data import RollingLiveLoader, load_live_snapshot
+from tellagent.schemas import AssetSnapshot, MarketSnapshot
 
 
 def test_live_adapter_normalizes_public_responses():
@@ -17,7 +18,7 @@ def test_live_adapter_normalizes_public_responses():
                 [600, "99", "105", "100", "104", "12"],
                 [700, "103", "106", "104", "105", "2"],
             ])
-        return httpx.Response(200, json={"result": {"current_funding": 0.0001}})
+        return httpx.Response(200, json={"result": {"current_funding": 0.0001, "open_interest": 1000}})
 
     snapshot = load_live_snapshot(client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert [asset.symbol for asset in snapshot.assets] == ["BTC", "ETH"]
@@ -25,6 +26,7 @@ def test_live_adapter_normalizes_public_responses():
     assert snapshot.assets[0].price_change_6h == pytest.approx(104 / 94 - 1)
     assert snapshot.assets[0].spot_volume_change_1h == 0.2
     assert snapshot.assets[0].funding_rate == 0.0001
+    assert snapshot.assets[0].open_interest == 1000
     assert snapshot.assets[0].open_interest_change_1h is None
 
 
@@ -39,3 +41,20 @@ def test_live_adapter_rejects_short_candle_history():
         assert "eight hourly candles" in str(exc)
     else:
         raise AssertionError("Short candle history should fail")
+
+
+def test_rolling_loader_calculates_real_interval_oi_change(monkeypatch):
+    values = iter([1000.0, 1020.0])
+
+    def snapshot(timeout):
+        oi = next(values)
+        return MarketSnapshot(
+            as_of="2026-10-08T00:00:00Z",
+            sources=["Deribit"],
+            assets=[AssetSnapshot(symbol="BTC", open_interest=oi)],
+        )
+
+    monkeypatch.setattr("tellagent.data.load_live_snapshot", snapshot)
+    loader = RollingLiveLoader()
+    assert loader().assets[0].open_interest_change_interval is None
+    assert loader().assets[0].open_interest_change_interval == pytest.approx(0.02)

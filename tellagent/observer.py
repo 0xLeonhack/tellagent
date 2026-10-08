@@ -25,7 +25,12 @@ def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketS
         as_of=snapshot.as_of,
         price_state={"change_1h": asset.price_change_1h, "change_6h": asset.price_change_6h},
         spot_state={"volume_change_1h": asset.spot_volume_change_1h},
-        leverage_state={"funding_rate": asset.funding_rate, "open_interest_change_1h": asset.open_interest_change_1h},
+        leverage_state={
+            "funding_rate": asset.funding_rate,
+            "open_interest": asset.open_interest,
+            "open_interest_change_interval": asset.open_interest_change_interval,
+            "open_interest_change_1h": asset.open_interest_change_1h,
+        },
         anomalies=list(analysis.evidence.supporting),
         missing_inputs=list(analysis.evidence.missing),
         quality_summary={
@@ -50,10 +55,11 @@ class RuleBasedJevObserver:
         started = datetime.now(timezone.utc)
         price = frame.price_state.get("change_1h")
         volume = frame.spot_state.get("volume_change_1h")
-        oi = frame.leverage_state.get("open_interest_change_1h")
+        oi_1h = frame.leverage_state.get("open_interest_change_1h")
+        oi_interval = frame.leverage_state.get("open_interest_change_interval")
         funding = frame.leverage_state.get("funding_rate")
-        state, probabilities = _state_probabilities(price, volume, oi)
-        conflicts = _conflict_roles(state, volume, oi, funding)
+        state, probabilities = _state_probabilities(price, volume, oi_1h, oi_interval)
+        conflicts = _conflict_roles(state, volume, oi_1h, funding)
         priority = _priority(state, frame, conflicts)
         supporting = ["price_state", "spot_state", "leverage_state"] if state != "uncertain" else []
         now = datetime.now(timezone.utc)
@@ -160,10 +166,17 @@ def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
         raise ValueError("Jev selected_value is absent from probabilities")
 
 
-def _state_probabilities(price: float | None, volume: float | None, oi: float | None) -> Tuple[str, Dict[str, float]]:
-    leverage = price is not None and price > 0.02 and oi is not None and oi > 0.08 and (volume is None or volume < oi * 0.75)
-    spot = price is not None and price > 0.02 and volume is not None and volume > 0.05 and (oi is None or oi <= 0.12)
-    deleveraging = price is not None and price < -0.02 and oi is not None and oi < -0.08
+def _state_probabilities(
+    price: float | None,
+    volume: float | None,
+    oi_1h: float | None,
+    oi_interval: float | None,
+) -> Tuple[str, Dict[str, float]]:
+    oi_signal = oi_1h if oi_1h is not None else oi_interval
+    oi_threshold = 0.08 if oi_1h is not None else 0.015
+    leverage = price is not None and price > 0.02 and oi_signal is not None and oi_signal > oi_threshold and (volume is None or volume < max(oi_signal * 0.75, 0.02))
+    spot = price is not None and price > 0.02 and volume is not None and volume > 0.05 and (oi_signal is None or oi_signal <= oi_threshold)
+    deleveraging = price is not None and price < -0.02 and oi_signal is not None and oi_signal < -oi_threshold
     if leverage:
         return "leverage_led", {"leverage_led": 0.82, "spot_confirmed": 0.08, "deleveraging": 0.02, "uncertain": 0.08}
     if spot:

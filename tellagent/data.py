@@ -50,17 +50,43 @@ def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> A
         price_change_1h=(latest_close - previous_close) / previous_close,
         price_change_6h=(latest_close - six_hour_close) / six_hour_close,
         spot_volume_change_1h=(latest_volume - previous_volume) / previous_volume,
-        funding_rate=_deribit_funding(ticker, symbol),
+        funding_rate=_deribit_value(ticker, symbol, "current_funding", "funding_8h"),
+        open_interest=_deribit_value(ticker, symbol, "open_interest"),
         open_interest_change_1h=None,
     )
 
 
-def _deribit_funding(payload: object, symbol: str) -> Optional[float]:
+def _deribit_value(payload: object, symbol: str, *fields: str) -> Optional[float]:
     if not isinstance(payload, dict) or not isinstance(payload.get("result"), dict):
         raise ValueError("Deribit response has no result for {}".format(symbol))
     result = payload["result"]
-    value = result.get("current_funding") or result.get("funding_8h")
-    return None if value is None else float(value)
+    for field in fields:
+        value = result.get(field)
+        if value is not None:
+            return float(value)
+    return None
+
+
+class RollingLiveLoader:
+    """Add real interval OI changes using only in-process previous samples."""
+
+    def __init__(self, timeout: float = 8.0):
+        self.timeout = timeout
+        self.previous_open_interest: Dict[str, float] = {}
+
+    def __call__(self) -> MarketSnapshot:
+        snapshot = load_live_snapshot(timeout=self.timeout)
+        enriched = []
+        for asset in snapshot.assets:
+            previous = self.previous_open_interest.get(asset.symbol)
+            current = asset.open_interest
+            change = None
+            if previous is not None and current is not None and previous != 0:
+                change = (current - previous) / previous
+            if current is not None:
+                self.previous_open_interest[asset.symbol] = current
+            enriched.append(asset.model_copy(update={"open_interest_change_interval": change}))
+        return snapshot.model_copy(update={"assets": enriched})
 
 
 def _get_json(client: httpx.Client, url: str, params: Dict[str, object]) -> object:
