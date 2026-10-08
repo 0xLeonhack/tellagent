@@ -81,6 +81,8 @@ uv run python -m tellagent observe --live --cycles 0 --interval 300
 
 Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计契约兼容的结构化判断；真实 Jev provider 仍可在这个接口上替换。
 
+判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前 Demo 不持久化事件，策略结果先以可测试模块存在。
+
 运行测试：
 
 ```bash
