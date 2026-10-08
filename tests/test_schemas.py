@@ -15,6 +15,6 @@ def test_report_rejects_confidence_outside_range():
             supporting_evidence=["x"],
             contradicting_evidence=["y"],
             data_time="2026-10-04T08:00:00Z",
-            sources=["fixture"],
+            sources=["test"],
             invalidation_condition="test",
         )

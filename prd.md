@@ -1,111 +1,72 @@
-# tellagent Hackathon MVP PRD
+# tellagent PRD
 
 ## 一句话
 
-把 BTC/ETH 的几项市场指标交给一个受约束的 agent，让它生成一条包含正反证据的“市场矛盾报告”。
+每 5 分钟获取 BTC/ETH 真实市场数据，由 Jev 低成本判断状态和研究价值；只有重要判断才调用 DeepSeek 等强模型，并使用相近历史上下文生成可反驳的研究报告。
 
-## 用户体验
-
-用户运行：
+## 用户入口
 
 ```bash
-python -m tellagent demo
+uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 ```
 
-系统展示：
+系统输出：
 
-1. 当前数据时间和数据来源；
-2. BTC/ETH 的关键指标；
-3. 一句市场判断；
-4. 支持证据；
-5. 反向证据；
-6. 缺失数据；
-7. 失效条件；
-8. 数据不足时的明确声明。
+1. 数据时间与真实来源；
+2. 价格、现货成交、funding 和 open interest 指标；
+3. Jev 状态、概率、冲突角色和研究优先级；
+4. 强模型生成的事实摘要；
+5. 支持、反向和缺失证据；
+6. 失效条件；
+7. 检索到的相近研究上下文。
 
-## 产品故事
-
-传统提醒会说“funding 很高”。tellagent 要演示的是：
-
-> 价格上涨、OI 和 funding 同时扩张，但现货确认不足，因此上涨可能主要由杠杆推动；如果现货继续放量且 OI 回落，这个判断就失效。
-
-这是研究提示，不是买卖建议。
-
-## MVP 架构
+## 核心流程
 
 ```text
-fixture/API
-  ↓
-data adapter
-  ↓
-metric calculator
-  ↓
-MarketSnapshot JSON
-  ↓
-one Market Analyst agent
-  ↓
-validated Report JSON
-  ↓
-CLI renderer
+Coinbase / Deribit
+  → 确定性指标
+  → MarketStateFrame
+  → Jev Observer
+  → Jev Gate
+  → DeepSeek / 强 Analyst
+  → JSONL Memory
+  → Rich MarketReport
 ```
 
-整个 MVP 可以是一个 Python 包、几个模块和一个命令，不需要服务拆分或数据库。
+## 产品约束
 
-## 技术选择
+- 运行时只使用真实公共市场数据，不提供虚构行情入口；
+- 代码负责指标计算，Jev 不重新计算事实；
+- Jev 是市场判断器，Gate 只是调用强模型的确定性门控；
+- 强模型不能抓取行情、编造新闻或新增不存在的证据；
+- 只保存通过门控的重要上下文；
+- 输出是研究支持，不是交易指令。
 
-- Python 3.12。
-- `uv` 管理依赖。
-- Typer + Rich：命令和终端报告。
-- httpx：调用数据 API 和模型 API。
-- Pydantic v2：输入输出校验。
-- pytest：测试指标计算和 fixture 模式。
-- 模型供应商通过一个很薄的 `generate_report(snapshot)` 函数隔离。
+## 当前技术栈
 
-不使用 FastAPI、前端框架、SQLAlchemy、队列、向量数据库或 agent 编排框架，除非演示效果明确需要。
+- Python 3.12；
+- `uv`；
+- Typer + Rich；
+- httpx；
+- Pydantic v2；
+- pytest；
+- append-only JSONL memory。
 
-## Agent 约束
+## 非目标
 
-Agent 只能：
-
-- 阅读已经计算好的 JSON；
-- 选择市场状态；
-- 组织支持、反向、缺失证据；
-- 写出失效条件。
-
-Agent 不能：
-
-- 自己抓取数据；
-- 自己计算收益率、百分位或相关性；
-- 自己编造新闻和因果关系；
-- 输出交易指令；
-- 在缺失数据时装作确定。
-
-## 最小目录
-
-```text
-tellagent/
-  __main__.py
-  cli.py
-  data.py
-  metrics.py
-  analyst.py
-  schemas.py
-  fixtures/demo_snapshot.json
-tests/
-```
-
-## Vibe coding 规则
-
-- 先让 fixture 模式跑通，再接实时 API。
-- 先定义 Pydantic schema，再让模型生成实现。
-- 指标计算写成无副作用纯函数，方便快速测试。
-- 所有外部调用都要有 fake 版本，不能让演示依赖网络。
-- 每次只改一个垂直功能，并立即运行 `pytest`。
-- 不为了“未来扩展”提前加入抽象层、数据库或多 agent。
-- 任何模型输出都必须校验；解析失败要显示可理解的错误。
-- 报告必须同时包含支持和反向证据；没有反向证据时必须写明“未发现/数据不足”。
-- 所有提示词、模型名称和 API 地址放在配置中，不散落在业务代码里。
+- 数据库和向量数据库；
+- Web、用户系统和通知；
+- 多 Agent 编排框架；
+- 自动交易和仓位管理；
+- 新闻、社交和链上数据；
+- 完整事件生命周期和自动复盘。
 
 ## 完成定义
 
-演示者在没有额外说明的情况下运行命令，30 秒内看到一条完整报告；断网时使用 fixture 仍然成功；报告能让观众看出“指标 → 判断 → 反驳条件”的关系。
+- 单个 `research` 命令可以持续运行；
+- Coinbase/Deribit 失败时明确报错，不回退到虚构行情；
+- Jev 未通过门控时不调用强模型；
+- Jev 通过门控时，强模型收到当前判断和相近记忆；
+- 只有重要判断进入 JSONL memory；
+- Rich 报告包含支持、反向、缺失证据和失效条件；
+- 测试和真实 API 单轮验证通过。

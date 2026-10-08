@@ -17,16 +17,15 @@ tellagent 只研究 BTC、ETH 和 ETH/BTC，目标是发现跨来源证据冲突
 - 明确不做：Web、多 Agent、链上数据和自动复盘。
 - 记忆方案：使用门控后的 append-only JSONL 和记忆检索，不把数据库作为实时分析前置条件。
 
-## Demo 之后的长期方向
+## 后续方向
 
 - 使用场景：个人研究者，本地运行。
-- 长期版本入口：CLI + 后台 worker。
-- 后续入口：localhost Web，主要用于浏览事件、证据和时间线。
+- 长期版本入口：保持单一 CLI 循环；是否需要后台服务由真实使用验证。
 - 长期版本数据：Coinbase 现货、Deribit 永续。
 - 长期版本频率：5 分钟。
 - 长期版本结果：研究事件，不是交易信号。
-- 长期版本存储：SQLite，append-only 原始观测。
-- 长期版本 agent：Observer/Jev；Investigator 只在事件触发后调用。
+- 长期版本存储：优先继续使用门控后的 JSONL 记忆；只有规模和查询需求证明必要时才引入数据库。
+- 长期版本 agent：Observer/Jev；强 Analyst 只在门控通过后调用。
 
 ## 不可违背的边界
 

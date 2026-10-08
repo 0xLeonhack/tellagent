@@ -9,7 +9,7 @@ collectors → raw repository → feature engine → MarketStateFrame
                                       ↓
                               ContinuousJudgment
                                       ↓
-                          deterministic EventPolicy
+                          deterministic Jev Gate
                                       ↓
                                EvidenceBundle
                                       ↓
@@ -128,13 +128,13 @@ async def investigate(bundle: EvidenceBundle) -> InvestigatorResult: ...
 
 实现必须支持 fake client。超时、限流和网络错误可重试；schema 错误、权限错误和版本错误不可盲目重试。
 
-### EventPolicy
+### Jev Gate
 
 输入：最近连续判断、确定性异常、质量摘要和当前 open events。
 
 输出：`silent`、`update_event(event_key)` 或 `open_event(event_key)`。
 
-policy 必须是纯函数或等价的可回放逻辑，不能读取模型自由文本来决定事件。
+Gate 必须是纯函数或等价的可回放逻辑，只读取 Jev 的结构化字段，不能读取模型自由文本决定是否调用强模型。
 
 ## 4. 状态和幂等
 
@@ -147,10 +147,10 @@ policy 必须是纯函数或等价的可回放逻辑，不能读取模型自由�
 ## 5. 测试最低要求
 
 - 时间窗口边界、时区、缺失值、重复值和 revision 的单元测试。
-- replay fixture：固定原始观测得到固定 frame、judgment mock 和 event。
+- 结构化真实形态样本：固定输入得到固定 frame 和 judgment。
 - ModelClient schema 错误、超时、限流和重复响应测试。
-- EventPolicy 的开事件、更新事件、关闭事件和幂等测试。
-- 一条从采集 fixture 到 CLI `show` 的集成测试。
+- Jev Gate 的放行、阻止、状态变化和概率跃迁测试。
+- 一条从 Mock 公共 API 到 `research` 管线的集成测试。
 
 ## 6. 配置与安全
 

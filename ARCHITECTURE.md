@@ -115,7 +115,7 @@ ETH node ─┘              └──────────┬─────
                            calibration reports
 ```
 
-首版使用模块化单体。采集进程与分析 worker 可以独立运行，但共享同一代码库、数据库和 schema，不拆微服务。
+首版使用模块化单体。采集、Jev、门控、强分析和 JSONL 记忆共享同一代码库和 schema，不拆微服务，也不要求数据库。
 
 ---
 
@@ -534,7 +534,7 @@ investigator 不直接访问开放网页，不临时寻找新闻原因，也不�
 ```console
 tell collect --source coinbase --asset BTC --asset ETH
 tell backfill --from 2025-01-01 --to 2026-01-01
-tell observe --at 2026-09-26T00:00:00Z
+uv run python -m tellagent research --cycles 1
 tell inbox --since 24h
 tell show <event-id>
 tell replay --from 2026-01-01 --to 2026-06-30
