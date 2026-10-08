@@ -52,6 +52,8 @@ uv run python -m tellagent demo --fixture
 
 这些能力属于后续版本。不要为了“以后可能需要”提前加入基础设施。
 
+当前记忆方案是项目目录下的 append-only JSONL 文件。只有 Jev 门控通过的判断和强 Analyst 结果进入记忆；不为当前 Demo 引入 SQLite、向量数据库或外部记忆服务。
+
 ## 3. 核心职责边界
 
 ```text

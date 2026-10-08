@@ -81,7 +81,7 @@ uv run python -m tellagent observe --live --cycles 0 --interval 300
 
 Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计契约兼容的结构化判断；真实 Jev provider 仍可在这个接口上替换。
 
-判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前 Demo 不持久化事件，策略结果先以可测试模块存在。
+判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前不要求数据库：重要判断会追加到 `.tellagent/memory.jsonl`，并按资产、状态、标签和关键词检索相近上下文。
 
 研究管线会在 Jev 门控通过后才调用强 Analyst，并只把通过门控的上下文写入 JSONL 记忆：
 
@@ -90,6 +90,14 @@ uv run python -m tellagent research --fixture --scenario leverage --analyst demo
 ```
 
 使用真实 DeepSeek 或其他 OpenAI-compatible Analyst 时，把 `--analyst remote` 与已有的 `TELLAGENT_MODEL_*` 环境变量一起使用。默认 `--analyst none` 只运行 Jev 门控和记忆写入，不调用强模型。
+
+持续研究循环：
+
+```bash
+uv run python -m tellagent research --live --analyst remote --cycles 0 --interval 300
+```
+
+`--cycles 0` 会持续运行直到 `Ctrl-C`。当前记忆是轻量 JSONL，不是向量数据库；它只保留通过门控的上下文，不保存每一帧原始行情。
 
 如果有可用的 Jev-compatible endpoint，可以启用真实远程 Observer：
 
