@@ -83,6 +83,14 @@ Observer 当前使用本地 `rule-based-jev` provider，输出的是 Jev 设计�
 
 判断流之上还有一个纯函数事件策略，可以根据状态变化、概率跃迁和研究优先级决定 `silent`、`open_event` 或 `update_event`。当前 Demo 不持久化事件，策略结果先以可测试模块存在。
 
+研究管线会在 Jev 门控通过后才调用强 Analyst，并只把通过门控的上下文写入 JSONL 记忆：
+
+```bash
+uv run python -m tellagent research --fixture --scenario leverage --analyst demo
+```
+
+使用真实 DeepSeek 或其他 OpenAI-compatible Analyst 时，把 `--analyst remote` 与已有的 `TELLAGENT_MODEL_*` 环境变量一起使用。默认 `--analyst none` 只运行 Jev 门控和记忆写入，不调用强模型。
+
 如果有可用的 Jev-compatible endpoint，可以启用真实远程 Observer：
 
 ```bash

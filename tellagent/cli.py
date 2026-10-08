@@ -8,6 +8,8 @@ from .analyst import RemoteAnalystConfig, generate_demo_report, generate_remote_
 from .data import DEFAULT_FIXTURE, SCENARIO_FIXTURES, load_fixture, load_live_snapshot
 from .renderer import render_json, render_reports
 from .observer import RemoteJevObserver, build_state_frame
+from .research import outcome_summary, process_snapshot
+from .memory import JsonlMemory
 from .stream import load_observation_snapshot, observe_snapshot, run_observer
 
 app = typer.Typer(add_completion=False, help="BTC/ETH market contradiction demo")
@@ -101,5 +103,34 @@ def observe(
         finally:
             if stream:
                 stream.close()
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command()
+def research(
+    fixture: bool = typer.Option(True, "--fixture/--live", help="Use the offline fixture."),
+    path: Optional[Path] = typer.Option(None, "--path", help="Override fixture path."),
+    scenario: str = typer.Option("default", "--scenario", help="Fixture scenario."),
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only research one asset."),
+    timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="API timeout in seconds."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+    analyst: str = typer.Option("none", "--analyst", help="Strong analyst: none, demo, or remote."),
+) -> None:
+    """Run Jev gate and call a stronger analyst only for actionable judgments."""
+    try:
+        snapshot = load_observation_snapshot(
+            fixture=fixture, scenario=scenario, path=path, timeout=timeout
+        )
+        if analyst not in {"none", "demo", "remote"}:
+            raise ValueError("--analyst must be none, demo, or remote.")
+        generator = None
+        if analyst == "demo":
+            generator = generate_demo_report
+        elif analyst == "remote":
+            config = RemoteAnalystConfig.from_env()
+            generator = lambda current, item: generate_remote_report(current, item, config)
+        outcomes = process_snapshot(snapshot, JsonlMemory(memory_path), generator, asset=asset)
+        typer.echo(outcome_summary(outcomes))
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
