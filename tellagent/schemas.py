@@ -103,3 +103,20 @@ class ContinuousJudgment(BaseModel):
     model_version: str
     latency_ms: int = Field(ge=0)
     created_at: str
+
+
+class MemoryRecord(BaseModel):
+    """A compact research context retained for later related judgments."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: str
+    asset: str
+    as_of: str
+    state: str
+    priority: str
+    summary: str = Field(min_length=1)
+    tags: List[str] = Field(default_factory=list)
+    judgment: ContinuousJudgment
+    report: Optional[MarketReport] = None
+    created_at: str
