@@ -1,4 +1,3 @@
-import json
 from typing import Iterable
 
 from rich.console import Console
@@ -50,15 +49,6 @@ def _print_report(console: Console, report: MarketReport) -> None:
     _print_evidence(console, "反向证据", report.contradicting_evidence, "yellow")
     _print_evidence(console, "缺失数据", report.missing_evidence, "magenta")
     console.print("[bold]失效条件[/bold]  {}\n".format(report.invalidation_condition))
-
-
-def render_json(reports: Iterable[MarketReport]) -> str:
-    """Serialize validated reports for scripts and future UI consumers."""
-    return json.dumps(
-        [report.model_dump() for report in reports],
-        ensure_ascii=False,
-        indent=2,
-    )
 
 
 def _print_evidence(console: Console, title: str, items, color: str) -> None:

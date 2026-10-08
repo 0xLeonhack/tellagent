@@ -10,9 +10,6 @@ from .metrics import analyze_asset, classify_state, oi_signal
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketStateFrame, MarketSnapshot
 
 
-QUESTION_SET_VERSION = "tellagent.observer.v1"
-
-
 def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketStateFrame:
     """Convert a snapshot into the compact state passed to an Observer."""
     analysis = analyze_asset(asset)

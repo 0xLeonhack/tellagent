@@ -7,7 +7,7 @@ from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
-from .observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
+from .observer import RemoteJevObserver, RuleBasedJevObserver
 from .renderer import render_reports
 from .research import ResearchOutcome, outcome_summary, run_research
 

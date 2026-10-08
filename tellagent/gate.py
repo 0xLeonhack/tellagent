@@ -11,7 +11,6 @@ class GateDecision(BaseModel):
     action: Literal["silent", "open_event", "update_event"]
     event_key: str
     reason: str = Field(min_length=1)
-    probability_delta: float = 0.0
 
 
 def evaluate_gate(
@@ -37,8 +36,8 @@ def evaluate_gate(
             reasons.append("probability jumped by {:.2f}".format(delta))
         if elevated:
             reasons.append("priority is {}".format(current.research_priority))
-        return GateDecision(action="update_event" if event_open else "open_event", event_key=event_key, reason="; ".join(reasons), probability_delta=delta)
-    return GateDecision(action="silent", event_key=event_key, reason="no state transition or meaningful probability change", probability_delta=delta)
+        return GateDecision(action="update_event" if event_open else "open_event", event_key=event_key, reason="; ".join(reasons))
+    return GateDecision(action="silent", event_key=event_key, reason="no state transition or meaningful probability change")
 
 
 def should_investigate(

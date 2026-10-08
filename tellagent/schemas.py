@@ -64,7 +64,6 @@ class SnapshotAnalysis(BaseModel):
     asset: AssetSnapshot
     evidence: EvidenceBundle
     suggested_state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
-    quality_notes: List[str] = Field(default_factory=list)
 
 
 class MarketStateFrame(BaseModel):

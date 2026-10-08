@@ -166,7 +166,7 @@ tellagent/
   analyst.py      OpenAI-compatible 强 Analyst
   memory.py       append-only JSONL 记忆与检索
   research.py     唯一的循环编排入口
-  renderer.py     Rich 报告 / JSON 序列化
+  renderer.py     Rich 报告
   schemas.py      Pydantic 契约
 tests/            20 个单元与集成测试
 ```

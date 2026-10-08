@@ -46,15 +46,11 @@ def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
     oi, oi_threshold = oi_signal(asset.open_interest_change_1h, asset.open_interest_change_interval)
     oi_window = "1h" if asset.open_interest_change_1h is not None else "本轮"
     missing = _missing_evidence(asset)
-    quality_notes: List[str] = []
-    if price is not None and -0.02 <= price <= 0.02:
-        quality_notes.append("价格变化未达到明显趋势阈值")
-
     state = classify_state(price, volume, oi, oi_threshold)
     if state == "leverage_led":
         supporting, contradicting = _leverage_evidence(asset, oi, oi_window)
     elif state == "spot_confirmed":
-        supporting, contradicting = _spot_evidence(asset, oi, oi_window, oi_threshold)
+        supporting, contradicting = _spot_evidence(asset)
     elif state == "deleveraging":
         supporting, contradicting = _deleveraging_evidence(asset, oi, oi_window)
     else:
@@ -73,7 +69,6 @@ def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
             missing=missing,
         ),
         suggested_state=state,
-        quality_notes=quality_notes,
     )
 
 
@@ -109,7 +104,7 @@ def _leverage_evidence(asset: AssetSnapshot, oi: float, oi_window: str) -> Tuple
     return supporting, contradicting
 
 
-def _spot_evidence(asset: AssetSnapshot, oi: float | None, oi_window: str, oi_threshold: float) -> Tuple[List[str], List[str]]:
+def _spot_evidence(asset: AssetSnapshot) -> Tuple[List[str], List[str]]:
     supporting = [
         "价格 1h 上涨 {}".format(_percent(asset.price_change_1h)),
         "现货成交量明显增加 {}".format(_percent(asset.spot_volume_change_1h)),
@@ -117,8 +112,6 @@ def _spot_evidence(asset: AssetSnapshot, oi: float | None, oi_window: str, oi_th
     contradicting: List[str] = []
     if asset.funding_rate is not None and asset.funding_rate > 0.0002:
         contradicting.append("funding rate 同时偏高 ({:.4f}%)".format(asset.funding_rate * 100))
-    if oi is not None and oi > oi_threshold:
-        contradicting.append("open interest {} 同时增加 {}".format(oi_window, _percent(oi)))
     return supporting, contradicting
 
 
