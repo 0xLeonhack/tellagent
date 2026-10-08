@@ -3,8 +3,30 @@ import json
 import httpx
 import pytest
 
+from tellagent.metrics import analyze_asset
 from tellagent.observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
+from tellagent.schemas import AssetSnapshot, MarketSnapshot
 from helpers import market_snapshot
+
+
+def test_metrics_and_observer_agree_on_state_for_same_frame():
+    cases = [
+        # interval OI just above threshold with spot volume in the gap that used to diverge
+        AssetSnapshot(symbol="ETH", price_change_1h=0.03, spot_volume_change_1h=0.016,
+                      funding_rate=0.0001, open_interest_change_interval=0.02),
+        AssetSnapshot(symbol="ETH", price_change_1h=0.042, spot_volume_change_1h=0.012,
+                      funding_rate=0.00024, open_interest_change_1h=0.11),
+        AssetSnapshot(symbol="BTC", price_change_1h=0.028, spot_volume_change_1h=0.09,
+                      funding_rate=0.00008, open_interest_change_1h=0.04),
+        AssetSnapshot(symbol="BTC", price_change_1h=-0.05, spot_volume_change_1h=0.01,
+                      funding_rate=0.0001, open_interest_change_1h=-0.12),
+        AssetSnapshot(symbol="ETH", price_change_1h=0.001),
+    ]
+    for asset in cases:
+        snapshot = MarketSnapshot(as_of="2026-10-08T00:00:00Z", sources=["Coinbase", "Deribit"], assets=[asset])
+        expected = analyze_asset(asset).suggested_state
+        observed = RuleBasedJevObserver().judge(build_state_frame(snapshot, asset)).selected_value
+        assert expected == observed, asset.symbol
 
 
 def test_observer_emits_structured_leverage_judgment():

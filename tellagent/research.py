@@ -43,15 +43,15 @@ def process_snapshot(
         judgment = observer.judge(frame)
         previous = _latest_judgment(records, item.symbol)
         investigate = should_investigate(judgment, previous, event_open=previous is not None)
-        related_context = memory_summary(
-            memory.related(item.symbol, state=judgment.selected_value, tags=judgment.contradicting_roles)
-        )
-        if investigate and contextual_report_generator:
-            report = contextual_report_generator(snapshot, item, judgment, related_context)
-        elif investigate and report_generator:
-            report = report_generator(snapshot, item)
-        else:
-            report = None
+        report = None
+        if investigate:
+            related_context = memory_summary(
+                memory.related(item.symbol, state=judgment.selected_value, tags=judgment.contradicting_roles)
+            )
+            if contextual_report_generator:
+                report = contextual_report_generator(snapshot, item, judgment, related_context)
+            elif report_generator:
+                report = report_generator(snapshot, item)
         summary = report.headline if report else "{}: {}".format(judgment.selected_value, judgment.research_priority)
         memory_record = None
         if investigate:

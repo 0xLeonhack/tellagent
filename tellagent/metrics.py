@@ -1,50 +1,69 @@
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .schemas import AssetSnapshot, EvidenceBundle, MarketReport, MarketSnapshot, SnapshotAnalysis
+
+
+OI_1H_THRESHOLD = 0.08
+OI_INTERVAL_THRESHOLD = 0.015
 
 
 def _percent(value: float) -> str:
     return "{:.2f}%".format(value * 100)
 
 
+def oi_signal(oi_1h: Optional[float], oi_interval: Optional[float]) -> Tuple[Optional[float], float]:
+    """Return the OI change to use and its threshold; 1h is preferred over the interval."""
+    if oi_1h is not None:
+        return oi_1h, OI_1H_THRESHOLD
+    return oi_interval, OI_INTERVAL_THRESHOLD
+
+
+def classify_state(
+    price: Optional[float],
+    volume: Optional[float],
+    oi: Optional[float],
+    oi_threshold: float,
+) -> str:
+    """Single source of truth for the four market states, shared by metrics and Observer."""
+    if (
+        price is not None and price > 0.02 and oi is not None and oi > oi_threshold
+        and (volume is None or volume < oi * 0.75)
+    ):
+        return "leverage_led"
+    if (
+        price is not None and price > 0.02 and volume is not None and volume > 0.05
+        and (oi is None or oi <= oi_threshold)
+    ):
+        return "spot_confirmed"
+    if price is not None and price < -0.02 and oi is not None and oi < -oi_threshold:
+        return "deleveraging"
+    return "uncertain"
+
+
 def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
     price = asset.price_change_1h
     volume = asset.spot_volume_change_1h
-    oi, oi_window = _oi_change(asset)
-    oi_threshold = 0.08 if oi_window == "1h" else 0.015
+    oi, oi_threshold = oi_signal(asset.open_interest_change_1h, asset.open_interest_change_interval)
+    oi_window = "1h" if asset.open_interest_change_1h is not None else "本轮"
     missing = _missing_evidence(asset)
     quality_notes: List[str] = []
     if price is not None and -0.02 <= price <= 0.02:
         quality_notes.append("价格变化未达到明显趋势阈值")
 
-    leverage_led = (
-        price is not None and price > 0.02 and oi is not None and oi > oi_threshold
-        and (volume is None or volume < oi * 0.75)
-    )
-    spot_confirmed = (
-        price is not None and price > 0.02 and volume is not None and volume > 0.05
-        and (oi is None or oi <= oi_threshold)
-    )
-    deleveraging = price is not None and price < -0.02 and oi is not None and oi < -oi_threshold
-
-    if leverage_led:
-        state = "leverage_led"
+    state = classify_state(price, volume, oi, oi_threshold)
+    if state == "leverage_led":
         supporting, contradicting = _leverage_evidence(asset, oi, oi_window)
-    elif spot_confirmed:
-        state = "spot_confirmed"
+    elif state == "spot_confirmed":
         supporting, contradicting = _spot_evidence(asset, oi, oi_window, oi_threshold)
-    elif deleveraging:
-        state = "deleveraging"
+    elif state == "deleveraging":
         supporting, contradicting = _deleveraging_evidence(asset, oi, oi_window)
     else:
-        state = "uncertain"
         supporting = ["未发现足够的跨指标证据支持单一市场状态"]
         contradicting = _uncertain_evidence(asset)
 
     if not contradicting:
         contradicting.append("当前数据中未发现明确的反向证据")
-    if not missing:
-        missing.append("未接入链上数据，链上确认仍然缺失")
+    missing.append("未接入链上数据，链上确认仍然缺失")
 
     return SnapshotAnalysis(
         asset=asset,
@@ -125,12 +144,6 @@ def _uncertain_evidence(asset: AssetSnapshot) -> List[str]:
     if asset.open_interest_change_1h is None and asset.open_interest_change_interval is None:
         evidence.append("缺少持仓变化，无法判断杠杆是否主导")
     return evidence or ["当前输入不足以形成可反驳的市场叙事"]
-
-
-def _oi_change(asset: AssetSnapshot) -> Tuple[float | None, str]:
-    if asset.open_interest_change_1h is not None:
-        return asset.open_interest_change_1h, "1h"
-    return asset.open_interest_change_interval, "本轮"
 
 
 def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:

@@ -83,8 +83,11 @@ def memory_summary(records: Iterable[MemoryRecord], limit: int = 3) -> str:
     )
 
 
+_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[一-鿿]")
+
+
 def _tokens(value: str) -> set[str]:
-    return {token.lower() for token in re.findall(r"[A-Za-z0-9_]+", value)}
+    return {token.lower() for token in _TOKEN_PATTERN.findall(value)}
 
 
 def _now() -> str:
