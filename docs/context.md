@@ -40,7 +40,7 @@ agent 判断关系：市场状态、支持/反向证据、研究优先级和有�
 - `available_time`：系统首次能看到观测的时间，回放唯一使用它过滤。
 - `MarketStateFrame`：传给 Observer 的结构化状态快照。
 - `ContinuousJudgment`：Observer 在一个 frame 上的结构化概率判断。
-- `EvidenceBundle`：当前 Demo 中指指标层产出的支持/反向/缺失证据集合；长期版本中才是触发 Investigator 时冻结的证据包（尚未实现）。
+- `EvidenceBundle`：当前 Demo 中指指标层产出的支持/反向/缺失证据集合；长期版本中才是触发 Analyst 时冻结的证据包（尚未实现）。
 - `MarketEvent`：由确定性异常和判断轨迹共同形成的研究事件。
 
 ## 当前未知项
@@ -51,4 +51,4 @@ agent 判断关系：市场状态、支持/反向证据、研究优先级和有�
 
 ## 读取顺序
 
-开发任务先读本文件，再读 `prd.md` 的边界和 `spec.md` 的契约，最后读 `plan.md` 决定当前阶段。若代码与本文件冲突，应先停下并更新决策，不要默默扩大范围。
+开发任务先读本文件，再读 `prd.md` 的边界和 `ARCHITECTURE.md` 的契约，最后读 `plan.md` 决定当前阶段。若代码与本文件冲突，应先停下并更新决策，不要默默扩大范围。

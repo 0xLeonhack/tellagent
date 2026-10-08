@@ -214,14 +214,13 @@ uv run pytest
 | --- | --- |
 | [`context.md`](docs/context.md) | 当前决策、术语、不可违背的边界和未知项（建议先读） |
 | [`prd.md`](docs/prd.md) | Hackathon MVP 的用户体验、技术选择和完成定义 |
-| [`spec.md`](docs/spec.md) | 数据契约、接口、幂等、配置与测试要求 |
 | [`DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 当前 Demo 的开发流程、范围、守则和验收标准 |
 | [`plan.md`](docs/plan.md) | MVP 的实现顺序、范围和验收标准 |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 长期系统架构、数据模型和设计原则 |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 长期系统架构、数据模型、接口契约和设计原则 |
 | [`intend.md`](docs/intend.md) | 系统与各类 agent 的核心意图、取舍和拒绝项 |
 | [`PRODUCT.md`](docs/PRODUCT.md) | 产品定位、竞品边界、创新假设和停止条件 |
 
-建议顺序：`context.md` → `prd.md` / `spec.md` → `plan.md` 或 `ARCHITECTURE.md`。
+建议顺序：`context.md` → `prd.md` → `plan.md` 或 `ARCHITECTURE.md`。
 
 ---
 

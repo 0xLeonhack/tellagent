@@ -1,6 +1,8 @@
 # ARCHITECTURE
 
-tellagent 的技术设计。产品定位见 [../README.md](../README.md)。
+> **定位说明**：本文描述完整目标系统的技术设计与契约；当前 Demo 只实现了其中一小部分（现状见 [`context.md`](context.md) 与 [`DEVELOPMENT.md`](DEVELOPMENT.md)），已实现的字段与命名可能与本文不同，未实现部分不要当作现状。
+>
+> 产品定位见 [../README.md](../README.md)。
 
 ---
 
@@ -30,7 +32,7 @@ Jev 快、便宜、输出结构化概率，它最适合做持续判断层。
 - Jev 判断与确定性 detector 发生冲突
 - 判断置信度持续下降
 
-昂贵的 investigator 只在事件越过 policy 时运行。
+昂贵的 Analyst 只在事件越过 policy 时运行。
 
 ### 原则三：原始观测不可变，修订产生新版本
 
@@ -106,7 +108,7 @@ ETH node ─┘              └──────────┬─────
                                     ▼
                      policy ────────┬───────────┐
                                     ▼           ▼
-                              investigator    silent log
+                              Analyst         silent log
                                     ▼
                            inbox / daily brief
                                     ▼
@@ -185,19 +187,60 @@ Frame 只包含归一化数值、方向、历史百分位和必要说明，不�
 ```text
 frame_id
 question_id
+question_set_version
 selected_value
 probabilities
 confidence
+supporting_roles[]
+contradicting_roles[]
+missing_roles[]
+research_priority        silent | watch | significant | urgent
+invalidation_conditions[]
 latency_ms
 input_tokens
+output_tokens
 estimated_cost
 provider
 model_version
-question_set_version
 created_at
 ```
 
-连续判断是一级数据资产，必须像行情一样可查询和回放。
+连续判断是一级数据资产，必须像行情一样可查询和回放。概率总和允许小数误差，但必须在服务端归一化或拒绝；未知枚举值必须拒绝。
+
+### `EvidenceBundle`
+
+触发 Analyst 时冻结的全部证据；调查开始后不得修改。
+
+```text
+event_key
+frozen_at
+frame_ids[]
+judgment_ids[]
+anomaly_ids[]
+supporting_evidence[]
+contradicting_evidence[]
+missing_evidence[]
+quality_summary
+snapshot_hash
+```
+
+`snapshot_hash` 用于证明 Analyst 使用的是冻结输入。
+
+### `AnalystResult`
+
+强 Analyst 只能解释已冻结的证据包，不能通过搜索新数据补救采集问题。
+
+```text
+fact_summary
+supporting_evidence[]
+contradicting_evidence[]
+missing_evidence[]
+data_limitations[]
+invalidation_conditions[]
+confidence_note
+```
+
+每条 evidence 必须引用 bundle 中的 feature、anomaly 或 observation；无法引用的句子必须被业务校验拒绝或标为未知。
 
 ### `Anomaly`
 
@@ -349,11 +392,11 @@ ETH：
 
 ```text
 market_stress         Score: calm / watch / stressed / extreme
-leverage_dominance    Noul: 当前变化是否主要由衍生品杠杆驱动
+leverage_dominance    当前变化是否主要由衍生品杠杆驱动
 spot_confirmation     Score: absent / weak / partial / strong
 signal_conflict       Score: aligned / mixed / conflicting / sharply_conflicting
 state_persistence     Choice: transient / developing / persistent / unclear
-research_priority     Score: background / monitor / investigate_now
+research_priority     Score: silent / watch / significant / urgent
 ```
 
 问题使用带语义锚点的等级，不使用无定义的 1–10 分。
@@ -369,7 +412,7 @@ research_priority     Score: background / monitor / investigate_now
 - confidence trend
 - Jev 与 rule-based detector 的 disagreement
 
-单次高概率不直接叫醒 investigator。至少满足“跃迁、持续、冲突”之一，并通过数据质量门。
+单次高概率不直接叫醒 Analyst。至少满足“跃迁、持续、冲突”之一，并通过数据质量门。
 
 ### Provider 抽象
 
@@ -452,7 +495,25 @@ open → developing → resolved
 
 ---
 
-## 十、策略与 investigator
+## 十、策略与 Analyst
+
+### 接口
+
+```python
+class ModelClient(Protocol):
+    async def observe(self, frame: MarketStateFrame) -> ContinuousJudgment: ...
+    async def analyze(self, bundle: EvidenceBundle) -> AnalystResult: ...
+```
+
+实现必须支持 fake client。超时、限流和网络错误可重试；schema 错误、权限错误和版本错误不可盲目重试。
+
+### Gate 契约
+
+输入：最近连续判断、确定性异常、质量摘要和当前 open events。
+
+输出：`silent`、`update_event(event_key)` 或 `open_event(event_key)`。
+
+Gate 必须是纯函数或等价的可回放逻辑，只读取 Jev 的结构化字段，不能读取模型自由文本决定是否调用强模型。
 
 ### PolicyEngine
 
@@ -467,7 +528,7 @@ PolicyEngine 综合以下信息决定动作：
 
 低优先级事件仍然保存，只是不主动通知。后台保持高召回，前台用 Top-K 和通知预算控制噪音。
 
-### Investigator 工具
+### Analyst 工具
 
 ```text
 read_event(event_id)
@@ -477,7 +538,7 @@ read_judgment_stream(question_id, asset, range)
 read_metric(metric, asset, range)
 ```
 
-investigator 不直接访问开放网页，不临时寻找新闻原因，也不修改证据。
+Analyst 不直接访问开放网页，不临时寻找新闻原因，也不修改证据。
 
 ### 输出契约
 
@@ -618,7 +679,7 @@ tell evaluate --horizon 24h
 
 ### 风险 7：AI 编造因果
 
-对策：investigator 只能读取内部证据，逐句引用，禁止开放式新闻归因。
+对策：Analyst 只能读取内部证据，逐句引用，禁止开放式新闻归因。
 
 ### 风险 8：模型供应商依赖
 
@@ -626,7 +687,24 @@ tell evaluate --horizon 24h
 
 ---
 
-## 十五、实施顺序
+## 十五、测试、配置与安全
+
+### 测试最低要求
+
+- 时间窗口边界、时区、缺失值、重复值和 revision 的单元测试。
+- 结构化真实形态样本：固定输入得到固定 frame 和 judgment。
+- ModelClient schema 错误、超时、限流和重复响应测试。
+- Jev Gate 的放行、阻止、状态变化和概率跃迁测试。
+- 一条从 Mock 公共 API 到 `research` 管线的集成测试。
+
+### 配置与安全
+
+- 所有密钥只从环境变量或未提交的本地配置读取。
+- 默认只读 API 权限；系统不接受交易 API key。
+- provider、model、interval、token limit、cost limit 和数据源全部配置化。
+- 日志禁止输出密钥、完整 prompt、个人令牌和未经脱敏的原始认证响应。
+
+## 十六、实施顺序
 
 1. 定义 schema、时间语义和 raw snapshot。
 2. 接入 Coinbase、Deribit，并完成历史 backfill。
