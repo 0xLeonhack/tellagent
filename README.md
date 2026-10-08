@@ -5,6 +5,7 @@
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![managed by uv](https://img.shields.io/badge/managed%20by-uv-261230)
 ![status](https://img.shields.io/badge/status-demo-orange)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 tellagent 是一个本地运行的加密市场研究工具。它把 Coinbase 现货与 Deribit 衍生品整理成结构化市场快照，先用低成本规则 Observer（Jev）判断状态与证据冲突，只在门控通过时再调用受约束的强模型，生成同时包含**正向、反向与缺失证据**的研究报告。
 
@@ -190,3 +191,9 @@ Python 3.12、[`uv`](https://docs.astral.sh/uv/)、Typer、Rich、httpx、Pydant
 ## 开发原则
 
 遇到实现选择时，优先级依次是：**可回放性、证据可追溯、失败可见、成本可测、实现简单、界面美观**。任何新功能都应能说明输入、输出、失败记录方式和未来验证方法。
+
+## 贡献与许可
+
+欢迎提交 Issue 和 Pull Request，请先阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md)；安全问题请按 [`SECURITY.md`](SECURITY.md) 私下报告。
+
+本项目基于 [MIT License](LICENSE) 开源，Copyright (c) 2026 Leon (0xLeonhack)。
