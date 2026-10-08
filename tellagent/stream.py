@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Callable, Iterable, Optional, TextIO
+from typing import Callable, Iterable, Optional, TextIO, Union
 
 from .data import DEFAULT_FIXTURE, SCENARIO_FIXTURES, load_fixture, load_live_snapshot
 from .observer import RuleBasedJevObserver, build_state_frame
@@ -40,7 +40,7 @@ def write_judgments(judgments: Iterable[ContinuousJudgment], output: TextIO) -> 
 
 
 def run_observer(
-    snapshot_loader: Callable[[], MarketSnapshot],
+    snapshot_loader: Callable[[], Union[MarketSnapshot, list[ContinuousJudgment]]],
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -56,8 +56,12 @@ def run_observer(
     destination = output or sys.stdout
     completed = 0
     while cycles == 0 or completed < cycles:
-        snapshot = snapshot_loader()
-        write_judgments(observe_snapshot(snapshot, asset), destination)
+        loaded = snapshot_loader()
+        if isinstance(loaded, MarketSnapshot):
+            judgments = observe_snapshot(loaded, asset)
+        else:
+            judgments = loaded
+        write_judgments(judgments, destination)
         completed += 1
         if cycles == 0 or completed < cycles:
             time.sleep(interval)

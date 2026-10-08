@@ -1,6 +1,10 @@
+import json
+import os
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Dict, List, Tuple
+
+import httpx
 
 from .metrics import analyze_asset
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketStateFrame, MarketSnapshot
@@ -70,6 +74,90 @@ class RuleBasedJevObserver:
             latency_ms=max(0, int((now - started).total_seconds() * 1000)),
             created_at=now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         )
+
+
+class RemoteJevObserver:
+    """Optional OpenAI-compatible Observer Provider.
+
+    The endpoint is configured explicitly because Jev's provider API is not
+    assumed to be identical to a generic chat API.
+    """
+
+    provider = "jev"
+    model_version = "remote"
+
+    def __init__(self, api_url: str, api_key: str, model: str, timeout: float = 20.0):
+        self.api_url = api_url
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
+
+    @classmethod
+    def from_env(cls) -> "RemoteJevObserver":
+        url = os.getenv("TELLAGENT_JEV_API_URL")
+        key = os.getenv("TELLAGENT_JEV_API_KEY")
+        model = os.getenv("TELLAGENT_JEV_MODEL", "jev-observer")
+        if not url or not key:
+            raise ValueError("Jev requires TELLAGENT_JEV_API_URL and TELLAGENT_JEV_API_KEY.")
+        return cls(url, key, model)
+
+    def judge(self, frame: MarketStateFrame, client: httpx.Client | None = None) -> ContinuousJudgment:
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Jev, a constrained market Observer. Return JSON only. "
+                        "Do not fetch data or invent evidence. Return probabilities for "
+                        "leverage_led, spot_confirmed, deleveraging, uncertain; they must "
+                        "sum to 1. Include selected_value, confidence, supporting_roles, "
+                        "contradicting_roles, missing_roles, research_priority, "
+                        "invalidation_conditions."
+                    ),
+                },
+                {"role": "user", "content": frame.model_dump_json()},
+            ],
+        }
+        owns_client = client is None
+        client = client or httpx.Client(timeout=self.timeout)
+        try:
+            response = client.post(
+                self.api_url,
+                headers={"Authorization": "Bearer " + self.api_key},
+                json=payload,
+            )
+            response.raise_for_status()
+            raw = response.json()
+            content = raw["choices"][0]["message"]["content"]
+            fields = json.loads(content) if isinstance(content, str) else content
+            judgment = ContinuousJudgment(
+                frame_id=frame.frame_id,
+                asset=frame.asset,
+                as_of=frame.as_of,
+                provider=self.provider,
+                model_version=self.model,
+                latency_ms=0,
+                created_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                **fields,
+            )
+            _validate_judgment_probabilities(judgment)
+            return judgment
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("Remote Jev failed: {}".format(exc)) from exc
+        finally:
+            if owns_client:
+                client.close()
+
+
+def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
+    total = sum(judgment.probabilities.values())
+    if abs(total - 1.0) > 0.01:
+        raise ValueError("Jev probabilities must sum to 1.0, got {:.4f}".format(total))
+    if judgment.selected_value not in judgment.probabilities:
+        raise ValueError("Jev selected_value is absent from probabilities")
 
 
 def _state_probabilities(price: float | None, volume: float | None, oi: float | None) -> Tuple[str, Dict[str, float]]:

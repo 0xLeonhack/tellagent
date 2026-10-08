@@ -7,7 +7,8 @@ import typer
 from .analyst import RemoteAnalystConfig, generate_demo_report, generate_remote_report
 from .data import DEFAULT_FIXTURE, SCENARIO_FIXTURES, load_fixture, load_live_snapshot
 from .renderer import render_json, render_reports
-from .stream import load_observation_snapshot, run_observer
+from .observer import RemoteJevObserver, build_state_frame
+from .stream import load_observation_snapshot, observe_snapshot, run_observer
 
 app = typer.Typer(add_completion=False, help="BTC/ETH market contradiction demo")
 
@@ -71,15 +72,32 @@ def observe(
     interval: float = typer.Option(300.0, "--interval", min=0.0, help="Seconds between iterations."),
     timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Live API timeout in seconds."),
     output: Optional[Path] = typer.Option(None, "--output", help="Write JSONL to a file."),
+    provider: str = typer.Option("rule", "--provider", help="Observer provider: rule or jev."),
 ) -> None:
     """Run the Observer and emit one ContinuousJudgment JSON object per line."""
     try:
-        loader = lambda: load_observation_snapshot(
+        if provider not in {"rule", "jev"}:
+            raise ValueError("--provider must be rule or jev.")
+        if provider == "jev":
+            remote = RemoteJevObserver.from_env()
+            loader = lambda: load_observation_snapshot(
+                fixture=fixture, scenario=scenario, path=path, timeout=timeout
+            )
+            def run_remote():
+                snapshot = loader()
+                selected = [item for item in snapshot.assets if not asset or item.symbol.upper() == asset.upper()]
+                if not selected:
+                    raise ValueError("Asset not found in snapshot: {}".format(asset))
+                return [remote.judge(build_state_frame(snapshot, item)) for item in selected]
+            cycle_runner = run_remote
+        else:
+            loader = lambda: load_observation_snapshot(
             fixture=fixture, scenario=scenario, path=path, timeout=timeout
-        )
+            )
+            cycle_runner = lambda: observe_snapshot(loader(), asset)
         stream = output.open("a", encoding="utf-8") if output else None
         try:
-            run_observer(loader, asset=asset, cycles=cycles, interval=interval, output=stream or sys.stdout)
+            run_observer(cycle_runner, cycles=cycles, interval=interval, output=stream or sys.stdout)
         finally:
             if stream:
                 stream.close()
