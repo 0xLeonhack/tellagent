@@ -84,7 +84,7 @@ uv sync --dev
 uv run python -m tellagent research --cycles 1 --analyst none
 ```
 
-这一路径会真实采集数据、计算确定性指标、用本地规则做 Jev 判断与门控，并写入 JSONL 记忆，只是不生成成文报告。
+这一路径会真实采集数据、计算确定性指标、用本地规则做 Jev 判断与门控；门控通过时生成一份由代码计算的确定性报告（不调用任何外部模型）并写入 JSONL 记忆。
 
 ### 方式二 · 接入远程强模型
 
@@ -168,7 +168,7 @@ tellagent/
   research.py     唯一的循环编排入口
   renderer.py     Rich 报告 / JSON 序列化
   schemas.py      Pydantic 契约
-tests/            19 个单元与集成测试
+tests/            20 个单元与集成测试
 ```
 
 运行测试：

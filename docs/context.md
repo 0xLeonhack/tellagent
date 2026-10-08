@@ -4,7 +4,7 @@
 
 加密市场数据已经很多，但研究者仍需在多个终端之间手工拼接结论。单指标阈值容易误报，模型摘要容易只寻找支持某个故事的证据，历史判断也常常没有完整复盘。
 
-tellagent 只研究 BTC、ETH 和 ETH/BTC，目标是发现跨来源证据冲突，并保留“当时实际看到了什么”。
+tellagent 研究 BTC 和 ETH，目标是发现跨来源证据冲突，并保留“当时实际看到了什么”；ETH/BTC 相对关系保留在长期设计中，当前 Demo 未实现。
 
 ## 当前 Demo 决策
 
@@ -40,7 +40,7 @@ agent 判断关系：市场状态、支持/反向证据、研究优先级和有�
 - `available_time`：系统首次能看到观测的时间，回放唯一使用它过滤。
 - `MarketStateFrame`：传给 Observer 的结构化状态快照。
 - `ContinuousJudgment`：Observer 在一个 frame 上的结构化概率判断。
-- `EvidenceBundle`：触发 Investigator 时冻结的全部证据。
+- `EvidenceBundle`：当前 Demo 中指指标层产出的支持/反向/缺失证据集合；长期版本中才是触发 Investigator 时冻结的证据包（尚未实现）。
 - `MarketEvent`：由确定性异常和判断轨迹共同形成的研究事件。
 
 ## 当前未知项

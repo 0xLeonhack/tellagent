@@ -51,7 +51,7 @@ Memory     保存并检索通过门控的上下文
 
 ## 代码边界
 
-- `data.py` 只处理真实公共 API；
+- `data.py` 只处理真实公共 API，以及进程内滚动采样（不落库）；
 - `metrics.py` 只做确定性计算；
 - `observer.py` 提供本地规则 Observer 和可替换远程 Jev Provider；
 - `gate.py` 提供 `evaluate_gate` 和 `should_investigate`；

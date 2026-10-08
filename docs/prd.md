@@ -18,7 +18,7 @@ uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 4. 强模型生成的事实摘要；
 5. 支持、反向和缺失证据；
 6. 失效条件；
-7. 检索到的相近研究上下文。
+7. 检索到的相近研究上下文（作为强模型输入，不单独回显）。
 
 ## 核心流程
 

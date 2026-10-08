@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-tellagent 的技术设计。产品定位见 [README.md](README.md)。
+tellagent 的技术设计。产品定位见 [../README.md](../README.md)。
 
 ---
 
@@ -517,10 +517,12 @@ investigator 不直接访问开放网页，不临时寻找新闻原因，也不�
 
 ## 十二、存储与运行
 
-### 首版技术栈
+### 技术栈
+
+当前 Demo 只用 Python 3.12 + 门控后的 JSONL 记忆，不引入数据库（见 [`context.md`](context.md)）。下列数据库与批处理组件属于长期阶段，仅在规模或查询需求证明必要时才引入：
 
 - Python 3.12+
-- PostgreSQL + TimescaleDB；本地开发允许 DuckDB
+- 门控后的 append-only JSONL 记忆；需要时再引入 PostgreSQL + TimescaleDB，本地开发允许 DuckDB
 - Parquet 保存批量原始数据与回放快照
 - Pydantic 定义跨模块契约
 - Polars 进行批量特征计算

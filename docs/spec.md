@@ -1,5 +1,7 @@
 # tellagent Technical Specification
 
+> **定位说明**：本文描述完整目标系统的技术契约，大部分尚未实现。当前 Demo 只实现了其中一小部分（见 [`DEVELOPMENT.md`](DEVELOPMENT.md)）；已实现 schema 的字段与命名可能与本文不同，未实现部分不要当作现状。
+
 ## 1. 运行结构
 
 ```text
