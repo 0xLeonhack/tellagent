@@ -53,6 +53,8 @@
   JSONL 相近记忆  +  Rich 报告           memory.py · renderer.py
 ```
 
+每次输出还会给出结构化研究建议：`investigate_now`、`monitor` 或 `wait_for_confirmation`，包含研究重点、因子候选和失效条件。这些是研究动作，不是买入、卖出或仓位建议。Gate 会对持续不变的判断去抖，只有状态、概率、优先级或冲突角色变化时才再次调用强模型。
+
 Observer 输出四种市场状态之一：
 
 | 状态 | 含义 |
