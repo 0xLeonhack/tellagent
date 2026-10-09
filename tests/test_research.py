@@ -23,6 +23,7 @@ def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_p
     assert outcomes[0].investigated is True
     assert outcomes[0].report is not None
     assert outcomes[0].memory_record is not None
+    assert outcomes[0].guidance.action == "investigate_now"
 
 
 def test_research_pipeline_skips_strong_model_for_uncertain_snapshot(tmp_path):

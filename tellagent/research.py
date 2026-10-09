@@ -5,7 +5,8 @@ from typing import Callable, List, Optional
 from .gate import should_investigate
 from .memory import JsonlMemory, memory_summary
 from .observer import RuleBasedJevObserver, build_state_frame
-from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord
+from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord, ResearchGuidance
+from .strategy import build_research_guidance
 
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
@@ -18,6 +19,7 @@ Observer = RuleBasedJevObserver
 @dataclass(frozen=True)
 class ResearchOutcome:
     judgment: ContinuousJudgment
+    guidance: ResearchGuidance
     investigated: bool
     report: Optional[MarketReport]
     memory_record: Optional[MemoryRecord]
@@ -62,7 +64,7 @@ def process_snapshot(
                 report=report,
             )
             records.append(memory_record)
-        outcomes.append(ResearchOutcome(judgment, investigate, report, memory_record))
+        outcomes.append(ResearchOutcome(judgment, build_research_guidance(judgment), investigate, report, memory_record))
     return outcomes
 
 

@@ -106,6 +106,17 @@ class ContinuousJudgment(BaseModel):
     created_at: str
 
 
+class ResearchGuidance(BaseModel):
+    """Non-trading next steps derived from a structured judgment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["investigate_now", "monitor", "wait_for_confirmation"]
+    focus: List[str] = Field(default_factory=list)
+    factor_candidates: List[str] = Field(default_factory=list)
+    invalidation_conditions: List[str] = Field(default_factory=list)
+
+
 class MemoryRecord(BaseModel):
     """A compact research context retained for later related judgments."""
 

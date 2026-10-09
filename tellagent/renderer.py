@@ -14,6 +14,7 @@ def render_reports(outcomes: Iterable[ResearchOutcome], console: Console = None)
     console.print("研究提示，不是交易建议。\n")
     for outcome in outcomes:
         _print_judgment(console, outcome.judgment)
+        _print_guidance(console, outcome.guidance)
         if outcome.report is not None:
             _print_report(console, outcome.report)
 
@@ -49,6 +50,13 @@ def _print_report(console: Console, report: MarketReport) -> None:
     _print_evidence(console, "反向证据", report.contradicting_evidence, "yellow")
     _print_evidence(console, "缺失数据", report.missing_evidence, "magenta")
     console.print("[bold]失效条件[/bold]  {}\n".format(report.invalidation_condition))
+
+
+def _print_guidance(console: Console, guidance) -> None:
+    console.print("[bold]研究建议[/bold]  {}".format(guidance.action))
+    console.print("  • 研究重点: {}".format("、".join(guidance.focus)))
+    if guidance.factor_candidates:
+        console.print("  • 因子候选: {}".format("、".join(guidance.factor_candidates)))
 
 
 def _print_evidence(console: Console, title: str, items, color: str) -> None:
