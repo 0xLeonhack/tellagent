@@ -48,6 +48,17 @@ def test_high_funding_is_counter_evidence_for_spot_confirmation():
     assert any("funding rate" in item for item in result.evidence.contradicting)
 
 
+def test_spot_confirmation_requires_oi_data():
+    result = analyze_asset(AssetSnapshot(
+        symbol="BTC",
+        price_change_1h=0.028,
+        spot_volume_change_1h=0.09,
+        funding_rate=0.00008,
+    ))
+    assert result.suggested_state == "uncertain"
+    assert any("open interest" in item for item in result.evidence.missing)
+
+
 def test_confidence_is_rounded_for_json_output():
     result = analyze_asset(AssetSnapshot(
         symbol="ETH",
