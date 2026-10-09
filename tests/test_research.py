@@ -59,5 +59,5 @@ def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
         on_cycle=lambda outcomes: seen.append(outcomes[0].investigated),
     )
     assert completed == 2
-    assert seen == [True, True]
-    assert len(memory.records()) == 2
+    assert seen == [True, False]
+    assert len(memory.records()) == 1

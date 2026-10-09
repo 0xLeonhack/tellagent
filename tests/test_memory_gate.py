@@ -21,3 +21,9 @@ def test_gate_passes_significant_judgment():
     snapshot = market_snapshot()
     judgment = RuleBasedJevObserver().judge(build_state_frame(snapshot, snapshot.assets[1]))
     assert should_investigate(judgment)
+
+
+def test_gate_suppresses_unchanged_significant_judgment():
+    snapshot = market_snapshot()
+    judgment = RuleBasedJevObserver().judge(build_state_frame(snapshot, snapshot.assets[1]))
+    assert should_investigate(judgment, judgment, event_open=True) is False
