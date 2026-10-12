@@ -130,9 +130,9 @@ uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 
 | 环境变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `TELLAGENT_JEV_API_URL` | Jev 端点 | 必填 |
+| `TELLAGENT_JEV_API_URL` | TypeSafe System One 端点 | `https://api.typesafe.ai/v1/systemone` |
 | `TELLAGENT_JEV_API_KEY` | Bearer 密钥 | 必填 |
-| `TELLAGENT_JEV_MODEL` | 模型名 | `jev-observer` |
+| `TELLAGENT_JEV_MODEL` | 模型名 | `jev-latest` |
 
 没有配置时使用默认本地规则 Observer，它实现与远程 Provider 相同的 `MarketStateFrame → ContinuousJudgment` 契约，但不调用外部模型。
 

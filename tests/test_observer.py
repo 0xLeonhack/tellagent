@@ -51,17 +51,17 @@ def test_observer_marks_missing_oi_as_watch():
 
 def test_remote_jev_validates_probability_contract():
     def handler(request: httpx.Request) -> httpx.Response:
-        content = {
-            "selected_value": "leverage_led",
-            "probabilities": {"leverage_led": 0.8, "spot_confirmed": 0.1, "deleveraging": 0.02, "uncertain": 0.08},
-            "confidence": 0.8,
-            "supporting_roles": ["leverage_state"],
-            "contradicting_roles": ["spot_confirmation"],
-            "missing_roles": [],
-            "research_priority": "significant",
-            "invalidation_conditions": ["OI falls"],
-        }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content)}}]})
+        body = json.loads(request.content)
+        assert "state" in body
+        assert body["questions"]["market_state"]["type"] == "choice"
+        return httpx.Response(200, json={"answers": {
+            "market_state": {
+                "type": "choice", "choice": "leverage_led", "confidence": 0.8,
+                "probabilities": {"leverage_led": 0.8, "spot_confirmed": 0.1, "deleveraging": 0.02, "uncertain": 0.08},
+            },
+            "research_priority": {"type": "choice", "choice": "significant", "confidence": 0.9, "probabilities": {}},
+            "signal_conflict": {"type": "choice", "choice": "spot_confirmation", "confidence": 0.7, "probabilities": {}},
+        }})
 
     snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[1])
@@ -74,12 +74,14 @@ def test_remote_jev_validates_probability_contract():
 
 def test_remote_jev_rejects_bad_probability_sum():
     def handler(request: httpx.Request) -> httpx.Response:
-        content = {
-            "selected_value": "uncertain", "probabilities": {"uncertain": 0.4},
-            "confidence": 0.4, "research_priority": "watch",
-            "invalidation_conditions": ["more data"],
-        }
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content)}}]})
+        return httpx.Response(200, json={"answers": {
+            "market_state": {
+                "type": "choice", "choice": "uncertain", "confidence": 0.4,
+                "probabilities": {"leverage_led": 0.1, "spot_confirmed": 0.1, "deleveraging": 0.1, "uncertain": 0.1},
+            },
+            "research_priority": {"type": "choice", "choice": "watch", "confidence": 0.6, "probabilities": {}},
+            "signal_conflict": {"type": "choice", "choice": "aligned", "confidence": 0.8, "probabilities": {}},
+        }})
 
     snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[0])

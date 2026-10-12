@@ -80,11 +80,7 @@ class RuleBasedJevObserver:
 
 
 class RemoteJevObserver:
-    """Optional OpenAI-compatible Observer Provider.
-
-    The endpoint is configured explicitly because Jev's provider API is not
-    assumed to be identical to a generic chat API.
-    """
+    """TypeSafe Jev System One API provider."""
 
     provider = "jev"
     model_version = "remote"
@@ -97,33 +93,50 @@ class RemoteJevObserver:
 
     @classmethod
     def from_env(cls) -> "RemoteJevObserver":
-        url = os.getenv("TELLAGENT_JEV_API_URL")
+        url = os.getenv("TELLAGENT_JEV_API_URL", "https://api.typesafe.ai/v1/systemone")
         key = os.getenv("TELLAGENT_JEV_API_KEY")
-        model = os.getenv("TELLAGENT_JEV_MODEL", "jev-observer")
-        if not url or not key:
-            raise ValueError("Jev requires TELLAGENT_JEV_API_URL and TELLAGENT_JEV_API_KEY.")
+        model = os.getenv("TELLAGENT_JEV_MODEL", "jev-latest")
+        if not key:
+            raise ValueError("Jev requires TELLAGENT_JEV_API_KEY.")
         return cls(url, key, model)
 
     def judge(self, frame: MarketStateFrame, client: httpx.Client | None = None) -> ContinuousJudgment:
         started = datetime.now(timezone.utc)
         payload = {
             "model": self.model,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are Jev, a constrained market Observer. Return JSON only. "
-                        "Do not fetch data or invent evidence. Return probabilities for "
-                        "leverage_led, spot_confirmed, deleveraging, uncertain; they must "
-                        "sum to 1. Include selected_value, confidence, supporting_roles, "
-                        "contradicting_roles, missing_roles, research_priority, "
-                        "invalidation_conditions."
-                    ),
+            "state": frame.model_dump(),
+            "questions": {
+                "market_state": {
+                    "type": "choice",
+                    "instructions": "Which market state best matches the supplied BTC or ETH frame?",
+                    "criteria": {
+                        "leverage_led": "Price move is primarily driven by derivatives leverage while spot confirmation is weak.",
+                        "spot_confirmed": "Price move is confirmed by spot volume without abnormal leverage expansion.",
+                        "deleveraging": "Price weakness is accompanied by a material reduction in open interest.",
+                        "uncertain": "Evidence is incomplete, weak, or conflicting, so no dominant state is justified.",
+                    },
                 },
-                {"role": "user", "content": frame.model_dump_json()},
-            ],
+                "research_priority": {
+                    "type": "choice",
+                    "instructions": "How urgently should a stronger market analyst review this frame?",
+                    "criteria": {
+                        "silent": "No meaningful anomaly or research value.",
+                        "watch": "Monitor for confirmation but do not escalate yet.",
+                        "significant": "Meaningful anomaly or conflict merits analysis now.",
+                        "urgent": "Extreme or sharply conflicting evidence requires immediate analysis.",
+                    },
+                },
+                "signal_conflict": {
+                    "type": "choice",
+                    "instructions": "Which contradictory evidence role is most important?",
+                    "criteria": {
+                        "aligned": "The price, spot, and leverage evidence is broadly aligned.",
+                        "spot_confirmation": "Spot activity contradicts a leverage-led interpretation.",
+                        "funding_extreme": "Funding conditions contradict a spot-confirmed interpretation.",
+                        "mixed": "Both spot and leverage evidence materially conflict.",
+                    },
+                },
+            },
         }
         owns_client = client is None
         client = client or httpx.Client(timeout=self.timeout)
@@ -135,8 +148,14 @@ class RemoteJevObserver:
             )
             response.raise_for_status()
             raw = response.json()
-            content = raw["choices"][0]["message"]["content"]
-            fields = json.loads(content) if isinstance(content, str) else content
+            answers = raw["answers"]
+            market_answer = answers["market_state"]
+            priority_answer = answers["research_priority"]
+            conflict_answer = answers["signal_conflict"]
+            selected_value = market_answer["choice"]
+            probabilities = market_answer["probabilities"]
+            priority = priority_answer["choice"]
+            conflict = conflict_answer["choice"]
             now = datetime.now(timezone.utc)
             judgment = ContinuousJudgment(
                 frame_id=frame.frame_id,
@@ -146,7 +165,14 @@ class RemoteJevObserver:
                 model_version=self.model,
                 latency_ms=max(0, int((now - started).total_seconds() * 1000)),
                 created_at=now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-                **fields,
+                selected_value=selected_value,
+                probabilities=probabilities,
+                confidence=market_answer["confidence"],
+                supporting_roles=_available_roles(frame),
+                contradicting_roles=_conflict_answer_roles(conflict),
+                missing_roles=list(frame.missing_inputs),
+                research_priority=priority,
+                invalidation_conditions=_invalidation_conditions(selected_value),
             )
             _validate_judgment_probabilities(judgment)
             return judgment
@@ -158,11 +184,34 @@ class RemoteJevObserver:
 
 
 def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
+    required = {"leverage_led", "spot_confirmed", "deleveraging", "uncertain"}
+    if set(judgment.probabilities) != required:
+        raise ValueError("Jev market_state probabilities must contain exactly the four supported states")
+    if any(value < 0 or value > 1 for value in judgment.probabilities.values()):
+        raise ValueError("Jev probabilities must be between 0 and 1")
     total = sum(judgment.probabilities.values())
     if abs(total - 1.0) > 0.01:
         raise ValueError("Jev probabilities must sum to 1.0, got {:.4f}".format(total))
     if judgment.selected_value not in judgment.probabilities:
         raise ValueError("Jev selected_value is absent from probabilities")
+
+
+def _available_roles(frame: MarketStateFrame) -> List[str]:
+    roles = ["price_state"]
+    if frame.spot_state.get("volume_change_1h") is not None:
+        roles.append("spot_state")
+    if any(value is not None for value in frame.leverage_state.values()):
+        roles.append("leverage_state")
+    return roles
+
+
+def _conflict_answer_roles(value: str) -> List[str]:
+    return {
+        "aligned": [],
+        "spot_confirmation": ["spot_confirmation"],
+        "funding_extreme": ["funding_extreme"],
+        "mixed": ["spot_confirmation", "funding_extreme"],
+    }[value]
 
 
 _PROBABILITIES: Dict[str, Dict[str, float]] = {
