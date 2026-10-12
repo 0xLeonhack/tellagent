@@ -242,6 +242,7 @@ Jev 市场状态
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 长期系统架构、数据模型、接口契约和设计原则 |
 | [`intend.md`](docs/intend.md) | 系统与各类 agent 的核心意图、取舍和拒绝项 |
 | [`PRODUCT.md`](docs/PRODUCT.md) | 产品定位、竞品边界、创新假设和停止条件 |
+| [`NEXT_STEPS.md`](docs/NEXT_STEPS.md) | Point-in-Time、复盘、校准和因子研究的后续计划 |
 
 建议顺序：`context.md` → `prd.md` → `plan.md` 或 `ARCHITECTURE.md`。
 
