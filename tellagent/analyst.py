@@ -6,6 +6,7 @@ from typing import Optional
 import httpx
 
 from .metrics import analyze_asset
+from .evidence import build_evidence_catalog, resolve_evidence_ids
 from .schemas import AnalystResult, AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot
 
 @dataclass(frozen=True)
@@ -38,11 +39,10 @@ def generate_remote_report(
 ) -> MarketReport:
     """Ask an OpenAI-compatible endpoint to organize precomputed evidence."""
     analysis = analyze_asset(asset)
+    catalog = build_evidence_catalog(asset.symbol, analysis.evidence)
     facts = {
         "asset": asset.model_dump(),
-        "supporting_evidence": analysis.evidence.supporting,
-        "contradicting_evidence": analysis.evidence.contradicting,
-        "missing_evidence": analysis.evidence.missing,
+        "evidence_catalog": [item.model_dump() for item in catalog],
         "jev_judgment": judgment.model_dump() if judgment else None,
         "related_memory": memory_context,
     }
@@ -57,10 +57,10 @@ def generate_remote_report(
                     "You are a constrained crypto market analyst. Return JSON only. "
                     "Use only the supplied facts. Do not invent news, calculate new "
                     "metrics, or give trading instructions. The JSON must contain: "
-                    "headline, state, confidence, supporting_evidence, "
-                    "contradicting_evidence, missing_evidence, "
-                    "invalidation_condition. Evidence strings must be copied exactly "
-                    "from the supplied evidence lists; do not add new evidence."
+                    "headline, state, confidence, supporting_evidence_ids, "
+                    "contradicting_evidence_ids, missing_evidence_ids, "
+                    "invalidation_condition. Evidence IDs must be selected exactly "
+                    "from the supplied evidence_catalog; do not add new evidence."
                 ),
             },
             {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
@@ -82,13 +82,26 @@ def generate_remote_report(
             if not isinstance(model_fields, dict):
                 raise ValueError("Model response must be a JSON object.")
             result = AnalystResult.model_validate(model_fields)
-            _validate_evidence_selection(result, analysis.evidence)
+            supporting = resolve_evidence_ids(result.supporting_evidence_ids, "supporting", catalog)
+            contradicting = resolve_evidence_ids(
+                result.contradicting_evidence_ids, "contradicting", catalog
+            )
+            missing = resolve_evidence_ids(result.missing_evidence_ids, "missing", catalog)
             return MarketReport(
                 asset=asset.symbol,
                 metrics=asset,
                 data_time=snapshot.as_of,
                 sources=snapshot.sources,
-                **result.model_dump(),
+                headline=result.headline,
+                state=result.state,
+                confidence=result.confidence,
+                supporting_evidence=supporting,
+                contradicting_evidence=contradicting,
+                missing_evidence=missing,
+                supporting_evidence_ids=result.supporting_evidence_ids,
+                contradicting_evidence_ids=result.contradicting_evidence_ids,
+                missing_evidence_ids=result.missing_evidence_ids,
+                invalidation_condition=result.invalidation_condition,
             )
         except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise ValueError("Remote analyst failed: {}".format(exc)) from exc
@@ -104,15 +117,3 @@ def _extract_model_content(payload: object):
         return payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("Model response has no chat completion content.") from exc
-
-
-def _validate_evidence_selection(result: AnalystResult, evidence) -> None:
-    groups = (
-        ("supporting", result.supporting_evidence, evidence.supporting),
-        ("contradicting", result.contradicting_evidence, evidence.contradicting),
-        ("missing", result.missing_evidence, evidence.missing),
-    )
-    for label, selected, allowed in groups:
-        invented = [item for item in selected if item not in allowed]
-        if invented:
-            raise ValueError("Model invented {} evidence: {}".format(label, invented[0]))

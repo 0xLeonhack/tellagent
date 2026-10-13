@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple
 
 from .schemas import AssetSnapshot, EvidenceBundle, MarketReport, MarketSnapshot, SnapshotAnalysis
+from .evidence import build_evidence_catalog
 
 
 OI_1H_THRESHOLD = 0.08
@@ -178,6 +179,7 @@ def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:
 def build_deterministic_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketReport:
     """Build a report from deterministic fields, used when no strong model is configured."""
     analysis = analyze_asset(asset)
+    catalog = build_evidence_catalog(asset.symbol, analysis.evidence)
     headline, invalidation, confidence = analysis_fields(analysis)
     return MarketReport(
         asset=asset.symbol,
@@ -188,6 +190,9 @@ def build_deterministic_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -
         supporting_evidence=analysis.evidence.supporting,
         contradicting_evidence=analysis.evidence.contradicting,
         missing_evidence=analysis.evidence.missing,
+        supporting_evidence_ids=[item.evidence_id for item in catalog if item.role == "supporting"],
+        contradicting_evidence_ids=[item.evidence_id for item in catalog if item.role == "contradicting"],
+        missing_evidence_ids=[item.evidence_id for item in catalog if item.role == "missing"],
         invalidation_condition=invalidation,
         data_time=snapshot.as_of,
         sources=snapshot.sources,

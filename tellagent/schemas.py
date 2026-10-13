@@ -35,15 +35,23 @@ class EvidenceBundle(BaseModel):
     missing: List[str] = Field(default_factory=list)
 
 
+class EvidenceItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    role: Literal["supporting", "contradicting", "missing"]
+    statement: str
+
+
 class AnalystResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     headline: str = Field(min_length=1)
     state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
     confidence: float = Field(ge=0, le=1)
-    supporting_evidence: List[str] = Field(min_length=1)
-    contradicting_evidence: List[str] = Field(min_length=1)
-    missing_evidence: List[str] = Field(default_factory=list)
+    supporting_evidence_ids: List[str] = Field(min_length=1)
+    contradicting_evidence_ids: List[str] = Field(min_length=1)
+    missing_evidence_ids: List[str] = Field(default_factory=list)
     invalidation_condition: str = Field(min_length=1)
 
 
@@ -58,6 +66,9 @@ class MarketReport(BaseModel):
     supporting_evidence: List[str] = Field(min_length=1)
     contradicting_evidence: List[str] = Field(min_length=1)
     missing_evidence: List[str] = Field(default_factory=list)
+    supporting_evidence_ids: List[str] = Field(default_factory=list)
+    contradicting_evidence_ids: List[str] = Field(default_factory=list)
+    missing_evidence_ids: List[str] = Field(default_factory=list)
     invalidation_condition: str = Field(min_length=1)
     data_time: str
     sources: List[str] = Field(min_length=1)
