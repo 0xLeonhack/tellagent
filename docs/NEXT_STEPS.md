@@ -3,7 +3,7 @@
 当前核心链路已经可运行：
 
 ```text
-真实市场数据 → 指标 → Jev → Gate → 强 Analyst → JSONL 记忆 → Rich 报告
+真实市场数据 → 指标 → Observer → Gate → 强 Analyst → JSONL 记忆 → Rich 报告
 ```
 
 下一阶段不继续堆叠状态、数据源或 Agent，而是补齐“判断之后发生了什么”的验证闭环。
@@ -19,9 +19,9 @@
 - [x] 历史 median / MAD / percentile / robust z-score 基线上下文；
 - [x] 稳定 Evidence ID；
 - [x] `factor_hypotheses.jsonl` 和 `factor_results.jsonl` 数据契约；
-- [ ] 用历史基线正式替换固定状态阈值；
+- [x] 用达到覆盖要求的历史基线替换对应固定阈值；
 - [ ] RuleBased 与远程 Jev 影子对比；
-- [ ] Outcome 校准汇总报告；
+- [x] Outcome 校准汇总报告；
 - [ ] WorldQuant expression 草稿导出。
 
 黑客松 Demo 默认使用本地规则 Observer。远程 Jev 接口保留，但 Jev 不是项目运行前提；只有真实对比证明有增益后，才考虑让它参与正式门控。
@@ -55,7 +55,7 @@
 
 ### `judgments.jsonl`
 
-每一帧 Jev 判断都保存，包括没有通过 Gate 的普通判断：
+每一帧 Observer 判断都保存，包括没有通过 Gate 的普通判断：
 
 - 完整概率分布；
 - selected state；

@@ -5,8 +5,8 @@
 ```text
 Coinbase / Deribit
   → 确定性指标
-  → Jev Observer
-  → Jev Gate
+  → Observer
+  → Deterministic Gate
   → DeepSeek / 强 Analyst
   → JSONL 相近记忆
   → Rich 市场报告
@@ -20,7 +20,7 @@ Coinbase / Deribit
 - Coinbase、Deribit 公共数据；
 - BTC、ETH；
 - 5 分钟级循环；
-- Jev 结构化判断；
+- Observer 结构化判断；
 - 只有门控通过才调用强模型；
 - 只保存重要判断和分析结果；
 - Rich 报告；
@@ -41,13 +41,13 @@ Coinbase / Deribit
 
 ```text
 代码       采集、时间窗口、指标、质量检查
-Jev        判断市场状态、概率、冲突、研究优先级
-Gate       根据 Jev 输出决定是否调用强模型
+Observer   判断市场状态、概率、冲突、研究优先级
+Gate       根据 Observer 输出决定是否调用强模型
 强 Analyst 组织证据、检索上下文、生成研究报告
 Memory     保存并检索通过门控的上下文
 ```
 
-`Gate` 不是另一个 Agent，也不重新判断市场。它是纯函数策略，只读取 Jev 的 `ContinuousJudgment` 和上一条判断，检测状态变化、概率跃迁和研究优先级。
+`Gate` 不是另一个 Agent，也不重新判断市场。它是纯函数策略，只读取 Observer 的 `ContinuousJudgment` 和上一条判断，检测状态变化、概率跃迁和研究优先级。
 
 ## 代码边界
 

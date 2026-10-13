@@ -41,7 +41,7 @@
   MarketStateFrame（可回放的结构化快照）           observer.py
             │
             ▼
-  Jev Observer（默认本地规则，可选远程）           observer.py
+  Observer（默认本地规则，Jev 为可选 Provider）    observer.py
             │
             ▼
   确定性 Gate（只在状态跃迁或高优先级时放行）       gate.py
@@ -68,6 +68,8 @@ Observer 输出四种市场状态之一：
 
 > **记忆**是轻量 append-only JSONL（`memory.jsonl`），只保留通过门控的上下文，不保存每一帧原始行情；检索按资产、状态与标签重叠度排序，把相近的历史判断注入强模型。
 
+完整审计数据分层保存：每帧状态写入 `frames/`，每次判断写入 `judgments/`，重要研究写入 `memory.jsonl`，到期复盘写入 `outcomes/`，因子假设写入 `factor_hypotheses.jsonl`。这些文件都位于 `.tellagent/`，无需数据库。
+
 ---
 
 ## 快速开始
@@ -80,13 +82,13 @@ uv sync --dev
 
 ### 方式一 · 无需密钥
 
-默认的 Jev Observer 是本地规则实现（`--provider rule`），只做确定性判断，不调用任何外部模型；`--analyst none` 跳过最贵的强 Analyst。
+默认 Observer 是本地规则实现（`--provider rule`），不调用 Jev API；`--analyst none` 跳过最贵的强 Analyst。
 
 ```bash
 uv run python -m tellagent research --cycles 1 --analyst none
 ```
 
-这一路径会真实采集数据、计算确定性指标、用本地规则做 Jev 判断与门控；门控通过时生成一份由代码计算的确定性报告（不调用任何外部模型）并写入 JSONL 记忆。
+这一路径会真实采集数据、计算确定性指标、用本地规则做状态判断与门控；门控通过时生成一份由代码计算的确定性报告（不调用任何外部模型）并写入 JSONL 记忆。
 
 ### 方式二 · 接入远程强模型
 
@@ -163,7 +165,7 @@ tellagent/
   cli.py          Typer 命令（只暴露 research）
   data.py         Coinbase / Deribit 公共数据适配
   metrics.py      确定性指标与证据分类
-  observer.py     本地规则 Jev + 远程 Jev Provider + state frame 构建
+  observer.py     本地规则 Observer + 可选 Jev Provider + state frame 构建
   gate.py         evaluate_gate / should_investigate
   analyst.py      OpenAI-compatible 强 Analyst
   memory.py       append-only JSONL 记忆与检索
@@ -203,7 +205,7 @@ uv run pytest
 
 - 实时模式没有历史数据库，只能在进程内计算相邻轮次的 open interest 变化；1 小时变化仍会明确显示为缺失；
 - 远程 Analyst / Jev 需要自行提供兼容接口；
-- 规则使用透明的演示阈值，尚未经过历史样本校准。
+- 动态阈值需要至少 24 个去重历史样本；覆盖不足时继续使用透明的默认阈值。
 
 **明确不做**
 

@@ -2,7 +2,7 @@
 
 ## 一句话
 
-每 5 分钟获取 BTC/ETH 真实市场数据，由 Jev 低成本判断状态和研究价值；只有重要判断才调用 DeepSeek 等强模型，并使用相近历史上下文生成可反驳的研究报告。
+每 5 分钟获取 BTC/ETH 真实市场数据，由本地规则 Observer 低成本判断状态和研究价值；只有重要判断才调用 DeepSeek 等强模型，并使用相近历史上下文生成可反驳的研究报告。Jev 是保留的可选 Provider，不是 Demo 前提。
 
 ## 用户入口
 
@@ -14,7 +14,7 @@ uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 
 1. 数据时间与真实来源；
 2. 价格、现货成交、funding 和 open interest 指标；
-3. Jev 状态、概率、冲突角色和研究优先级；
+3. Observer 状态、概率、冲突角色和研究优先级；
 4. 强模型生成的事实摘要；
 5. 支持、反向和缺失证据；
 6. 失效条件；
@@ -26,8 +26,8 @@ uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 Coinbase / Deribit
   → 确定性指标
   → MarketStateFrame
-  → Jev Observer
-  → Jev Gate
+  → Observer
+  → Deterministic Gate
   → DeepSeek / 强 Analyst
   → JSONL Memory
   → Rich MarketReport
@@ -37,7 +37,7 @@ Coinbase / Deribit
 
 - 运行时只使用真实公共市场数据，不提供虚构行情入口；
 - 代码负责指标计算，Jev 不重新计算事实；
-- Jev 是市场判断器，Gate 只是调用强模型的确定性门控；
+- Observer 是市场判断器，Gate 只是调用强模型的确定性门控；
 - 强模型不能抓取行情、编造新闻或新增不存在的证据；
 - 只保存通过门控的重要上下文；
 - 输出是研究支持，不是交易指令。
