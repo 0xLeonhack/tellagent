@@ -46,10 +46,12 @@ def process_snapshot(
         frame = build_state_frame(snapshot, item)
         if ledger:
             ledger.append_frame(snapshot, item, frame)
+            previous = ledger.latest_judgment(item.symbol)
+        else:
+            previous = _latest_judgment(records, item.symbol)
         judgment = observer.judge(frame)
         if ledger:
             ledger.append_judgment(judgment)
-        previous = _latest_judgment(records, item.symbol)
         investigate = should_investigate(judgment, previous, event_open=previous is not None)
         report = None
         if investigate:
