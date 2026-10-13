@@ -28,6 +28,21 @@ def compute_feature_baselines(
     }
 
 
+def build_strategy_thresholds(baselines: Dict[str, FeatureBaseline]) -> Dict[str, float]:
+    """Create bounded adaptive thresholds only from sufficiently covered baselines."""
+    thresholds = {}
+    mappings = {
+        "price_change_1h": ("price_change_1h", 0.005, 0.05),
+        "spot_volume_change_1h": ("spot_volume_change_1h", 0.02, 2.0),
+        "open_interest_change_interval": ("oi_interval", 0.0025, 0.05),
+    }
+    for feature, (name, lower, upper) in mappings.items():
+        baseline = baselines.get(feature)
+        if baseline and baseline.ready and baseline.p90_abs is not None:
+            thresholds[name] = min(upper, max(lower, baseline.p90_abs))
+    return thresholds
+
+
 def _historical_values(
     records: list[FrameLedgerRecord], symbol: str, feature: str
 ) -> list[float]:

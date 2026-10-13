@@ -15,6 +15,7 @@ class AssetSnapshot(BaseModel):
     open_interest: Optional[float] = None
     open_interest_change_interval: Optional[float] = None
     open_interest_change_1h: Optional[float] = None
+    strategy_thresholds: Dict[str, float] = Field(default_factory=dict)
 
 
 class MarketSnapshot(BaseModel):
@@ -109,6 +110,7 @@ class MarketStateFrame(BaseModel):
     missing_inputs: List[str] = Field(default_factory=list)
     quality_summary: Dict[str, str]
     baseline_state: Dict[str, FeatureBaseline] = Field(default_factory=dict)
+    strategy_thresholds: Dict[str, float] = Field(default_factory=dict)
     schema_version: str = "tellagent.market-state.v1"
 
 

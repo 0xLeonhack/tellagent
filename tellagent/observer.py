@@ -49,6 +49,7 @@ def build_state_frame(
             "status": "degraded" if analysis.evidence.missing else "ok",
         },
         baseline_state=baseline_state or {},
+        strategy_thresholds=asset.strategy_thresholds,
     )
 
 
@@ -69,7 +70,9 @@ class RuleBasedJevObserver:
         oi_1h = frame.leverage_state.get("open_interest_change_1h")
         oi_interval = frame.leverage_state.get("open_interest_change_interval")
         funding = frame.leverage_state.get("funding_rate")
-        state, probabilities = _state_probabilities(price, volume, oi_1h, oi_interval)
+        state, probabilities = _state_probabilities(
+            price, volume, oi_1h, oi_interval, frame.strategy_thresholds
+        )
         conflicts = _conflict_roles(state, volume, funding)
         priority = _priority(state, frame, conflicts)
         supporting = ["price_state", "spot_state", "leverage_state"] if state != "uncertain" else []
@@ -241,9 +244,20 @@ def _state_probabilities(
     volume: float | None,
     oi_1h: float | None,
     oi_interval: float | None,
+    thresholds: Dict[str, float] | None = None,
 ) -> Tuple[str, Dict[str, float]]:
-    oi, oi_threshold = oi_signal(oi_1h, oi_interval)
-    state = classify_state(price, volume, oi, oi_threshold)
+    thresholds = thresholds or {}
+    oi, oi_threshold = oi_signal(
+        oi_1h, oi_interval, thresholds.get("oi_interval", 0.015)
+    )
+    state = classify_state(
+        price,
+        volume,
+        oi,
+        oi_threshold,
+        thresholds.get("price_change_1h", 0.02),
+        thresholds.get("spot_volume_change_1h", 0.05),
+    )
     return state, _PROBABILITIES[state]
 
 

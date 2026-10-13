@@ -12,11 +12,15 @@ def _percent(value: float) -> str:
     return "{:.2f}%".format(value * 100)
 
 
-def oi_signal(oi_1h: Optional[float], oi_interval: Optional[float]) -> Tuple[Optional[float], float]:
+def oi_signal(
+    oi_1h: Optional[float],
+    oi_interval: Optional[float],
+    interval_threshold: float = OI_INTERVAL_THRESHOLD,
+) -> Tuple[Optional[float], float]:
     """Return the OI change to use and its threshold; 1h is preferred over the interval."""
     if oi_1h is not None:
         return oi_1h, OI_1H_THRESHOLD
-    return oi_interval, OI_INTERVAL_THRESHOLD
+    return oi_interval, interval_threshold
 
 
 def classify_state(
@@ -24,19 +28,21 @@ def classify_state(
     volume: Optional[float],
     oi: Optional[float],
     oi_threshold: float,
+    price_threshold: float = 0.02,
+    volume_threshold: float = 0.05,
 ) -> str:
     """Single source of truth for the four market states, shared by metrics and Observer."""
     if (
-        price is not None and price > 0.02 and oi is not None and oi > oi_threshold
+        price is not None and price > price_threshold and oi is not None and oi > oi_threshold
         and (volume is None or volume < oi * 0.75)
     ):
         return "leverage_led"
     if (
-        price is not None and price > 0.02 and volume is not None and volume > 0.05
+        price is not None and price > price_threshold and volume is not None and volume > volume_threshold
         and oi is not None and oi <= oi_threshold
     ):
         return "spot_confirmed"
-    if price is not None and price < -0.02 and oi is not None and oi < -oi_threshold:
+    if price is not None and price < -price_threshold and oi is not None and oi < -oi_threshold:
         return "deleveraging"
     return "uncertain"
 
@@ -44,10 +50,22 @@ def classify_state(
 def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
     price = asset.price_change_1h
     volume = asset.spot_volume_change_1h
-    oi, oi_threshold = oi_signal(asset.open_interest_change_1h, asset.open_interest_change_interval)
+    thresholds = asset.strategy_thresholds
+    oi, oi_threshold = oi_signal(
+        asset.open_interest_change_1h,
+        asset.open_interest_change_interval,
+        thresholds.get("oi_interval", OI_INTERVAL_THRESHOLD),
+    )
     oi_window = "1h" if asset.open_interest_change_1h is not None else "本轮"
     missing = _missing_evidence(asset)
-    state = classify_state(price, volume, oi, oi_threshold)
+    state = classify_state(
+        price,
+        volume,
+        oi,
+        oi_threshold,
+        thresholds.get("price_change_1h", 0.02),
+        thresholds.get("spot_volume_change_1h", 0.05),
+    )
     if state == "leverage_led":
         supporting, contradicting = _leverage_evidence(asset, oi, oi_window)
     elif state == "spot_confirmed":

@@ -3,7 +3,7 @@ import time
 from typing import Callable, List, Optional
 
 from .gate import should_investigate
-from .calibration import compute_feature_baselines
+from .calibration import build_strategy_thresholds, compute_feature_baselines
 from .factors import JsonlFactorStore, build_factor_hypotheses
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
@@ -59,6 +59,9 @@ def process_snapshot(
     for item in selected:
         historical_frames = ledger.frames(item.symbol) if ledger else []
         baseline_state = compute_feature_baselines(item, historical_frames)
+        thresholds = build_strategy_thresholds(baseline_state)
+        if thresholds:
+            item = item.model_copy(update={"strategy_thresholds": thresholds})
         frame = build_state_frame(snapshot, item, baseline_state)
         if ledger:
             ledger.append_frame(snapshot, item, frame)
