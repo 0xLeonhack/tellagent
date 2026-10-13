@@ -7,7 +7,7 @@ from typing import Dict, List, Protocol, Tuple
 import httpx
 
 from .metrics import analyze_asset, classify_state, oi_signal
-from .schemas import AssetSnapshot, ContinuousJudgment, MarketStateFrame, MarketSnapshot
+from .schemas import AssetSnapshot, ContinuousJudgment, FeatureBaseline, MarketStateFrame, MarketSnapshot
 
 
 class JudgmentProvider(Protocol):
@@ -19,7 +19,11 @@ class JudgmentProvider(Protocol):
     def judge(self, frame: MarketStateFrame) -> ContinuousJudgment: ...
 
 
-def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketStateFrame:
+def build_state_frame(
+    snapshot: MarketSnapshot,
+    asset: AssetSnapshot,
+    baseline_state: Dict[str, FeatureBaseline] | None = None,
+) -> MarketStateFrame:
     """Convert a snapshot into the compact state passed to an Observer."""
     analysis = analyze_asset(asset)
     frame_id = sha256(
@@ -44,6 +48,7 @@ def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketS
             "missing_count": str(len(analysis.evidence.missing)),
             "status": "degraded" if analysis.evidence.missing else "ok",
         },
+        baseline_state=baseline_state or {},
     )
 
 

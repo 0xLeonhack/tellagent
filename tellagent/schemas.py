@@ -71,6 +71,18 @@ class SnapshotAnalysis(BaseModel):
     suggested_state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
 
 
+class FeatureBaseline(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sample_count: int = Field(ge=0)
+    ready: bool
+    median: Optional[float] = None
+    mad: Optional[float] = None
+    percentile: Optional[float] = Field(default=None, ge=0, le=1)
+    robust_zscore: Optional[float] = None
+    p90_abs: Optional[float] = None
+
+
 class MarketStateFrame(BaseModel):
     """Compact, replayable input presented to an Observer."""
 
@@ -85,6 +97,7 @@ class MarketStateFrame(BaseModel):
     anomalies: List[str] = Field(default_factory=list)
     missing_inputs: List[str] = Field(default_factory=list)
     quality_summary: Dict[str, str]
+    baseline_state: Dict[str, FeatureBaseline] = Field(default_factory=dict)
     schema_version: str = "tellagent.market-state.v1"
 
 

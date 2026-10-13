@@ -3,6 +3,7 @@ import time
 from typing import Callable, List, Optional
 
 from .gate import should_investigate
+from .calibration import compute_feature_baselines
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
 from .observer import JudgmentProvider, RuleBasedJevObserver, build_state_frame
@@ -52,7 +53,9 @@ def process_snapshot(
         raise ValueError("Asset not found in snapshot: {}".format(asset))
     outcomes = []
     for item in selected:
-        frame = build_state_frame(snapshot, item)
+        historical_frames = ledger.frames(item.symbol) if ledger else []
+        baseline_state = compute_feature_baselines(item, historical_frames)
+        frame = build_state_frame(snapshot, item, baseline_state)
         if ledger:
             ledger.append_frame(snapshot, item, frame)
             judgment_history = ledger.judgments(item.symbol)
