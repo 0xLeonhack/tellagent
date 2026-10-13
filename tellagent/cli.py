@@ -5,6 +5,7 @@ import typer
 
 from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
+from .ledger import JsonlLedger
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedJevObserver
@@ -46,6 +47,7 @@ def research(
         else:
             report_generator = build_deterministic_report
         memory = JsonlMemory(memory_path)
+        ledger = JsonlLedger(memory_path.parent)
         live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
@@ -64,6 +66,7 @@ def research(
             interval=interval,
             contextual_report_generator=contextual_generator,
             observer=observer,
+            ledger=ledger,
             on_cycle=on_cycle,
         )
     except (OSError, ValueError) as exc:

@@ -3,6 +3,7 @@ import time
 from typing import Callable, List, Optional
 
 from .gate import should_investigate
+from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
 from .observer import RuleBasedJevObserver, build_state_frame
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord, ResearchGuidance
@@ -32,6 +33,7 @@ def process_snapshot(
     asset: Optional[str] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
     observer: Optional[Observer] = None,
+    ledger: Optional[JsonlLedger] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
     observer = observer or RuleBasedJevObserver()
@@ -42,7 +44,11 @@ def process_snapshot(
     outcomes = []
     for item in selected:
         frame = build_state_frame(snapshot, item)
+        if ledger:
+            ledger.append_frame(snapshot, item, frame)
         judgment = observer.judge(frame)
+        if ledger:
+            ledger.append_judgment(judgment)
         previous = _latest_judgment(records, item.symbol)
         investigate = should_investigate(judgment, previous, event_open=previous is not None)
         report = None
@@ -88,6 +94,7 @@ def run_research(
     report_generator: Optional[ReportGenerator] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
     observer: Optional[Observer] = None,
+    ledger: Optional[JsonlLedger] = None,
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -99,7 +106,7 @@ def run_research(
     completed = 0
     while cycles == 0 or completed < cycles:
         outcomes = process_snapshot(
-            snapshot_loader(), memory, report_generator, asset, contextual_report_generator, observer
+            snapshot_loader(), memory, report_generator, asset, contextual_report_generator, observer, ledger
         )
         if on_cycle:
             on_cycle(outcomes)

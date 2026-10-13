@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Dict, Optional
 
 import httpx
@@ -16,17 +18,30 @@ def load_live_snapshot(timeout: float = 8.0, client: Optional[httpx.Client] = No
     client = client or httpx.Client(timeout=timeout)
     try:
         assets = []
-        as_of = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        source_times = {}
+        payload_hashes = {}
         for symbol in ("BTC", "ETH"):
             candles = _get_json(client, "{}/products/{}-USD/candles".format(COINBASE_API, symbol), {"granularity": 3600})
-            assets.append(_asset_from_sources(client, symbol, candles))
-        return MarketSnapshot(as_of=as_of, sources=["Coinbase", "Deribit"], assets=assets)
+            asset, metadata = _asset_from_sources(client, symbol, candles)
+            assets.append(asset)
+            source_times.update(metadata["source_times"])
+            payload_hashes.update(metadata["payload_hashes"])
+        received_time = _now()
+        return MarketSnapshot(
+            as_of=received_time,
+            sources=["Coinbase", "Deribit"],
+            assets=assets,
+            source_times=source_times,
+            payload_hashes=payload_hashes,
+            available_time=received_time,
+            received_time=received_time,
+        )
     finally:
         if owns_client:
             client.close()
 
 
-def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> AssetSnapshot:
+def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> tuple[AssetSnapshot, dict]:
     if not isinstance(candles, list) or len(candles) < 8:
         raise ValueError("Coinbase returned fewer than eight hourly candles for {}".format(symbol))
     ordered = sorted(candles, key=lambda candle: candle[0])
@@ -45,7 +60,7 @@ def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> A
     if previous_close == 0 or previous_volume == 0 or six_hour_close == 0:
         raise ValueError("Coinbase returned zero baseline for {}".format(symbol))
     ticker = _get_json(client, "{}/public/ticker".format(DERIBIT_API), {"instrument_name": "{}-PERPETUAL".format(symbol)})
-    return AssetSnapshot(
+    asset = AssetSnapshot(
         symbol=symbol,
         price_change_1h=(latest_close - previous_close) / previous_close,
         price_change_6h=(latest_close - six_hour_close) / six_hour_close,
@@ -54,6 +69,19 @@ def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> A
         open_interest=_deribit_value(ticker, symbol, "open_interest"),
         open_interest_change_1h=None,
     )
+    ticker_result = ticker.get("result", {}) if isinstance(ticker, dict) else {}
+    metadata = {
+        "source_times": {
+            "coinbase:{}".format(symbol): _epoch_iso(float(latest[0])),
+            "deribit:{}".format(symbol): _epoch_iso(float(ticker_result["timestamp"]) / 1000)
+            if ticker_result.get("timestamp") is not None else _now(),
+        },
+        "payload_hashes": {
+            "coinbase:{}".format(symbol): _payload_hash(candles),
+            "deribit:{}".format(symbol): _payload_hash(ticker),
+        },
+    }
+    return asset, metadata
 
 
 def _deribit_value(payload: object, symbol: str, *fields: str) -> Optional[float]:
@@ -96,3 +124,16 @@ def _get_json(client: httpx.Client, url: str, params: Dict[str, object]) -> obje
         return response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise ValueError("Market data request failed: {}".format(url)) from exc
+
+
+def _payload_hash(payload: object) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return sha256(canonical.encode()).hexdigest()
+
+
+def _epoch_iso(value: float) -> str:
+    return datetime.fromtimestamp(value, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")

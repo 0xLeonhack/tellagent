@@ -18,7 +18,9 @@ def test_live_adapter_normalizes_public_responses():
                 [600, "99", "105", "100", "104", "12"],
                 [700, "103", "106", "104", "105", "2"],
             ])
-        return httpx.Response(200, json={"result": {"current_funding": 0.0001, "open_interest": 1000}})
+        return httpx.Response(200, json={"result": {
+            "current_funding": 0.0001, "open_interest": 1000, "timestamp": 1000,
+        }})
 
     snapshot = load_live_snapshot(client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert [asset.symbol for asset in snapshot.assets] == ["BTC", "ETH"]
@@ -28,6 +30,10 @@ def test_live_adapter_normalizes_public_responses():
     assert snapshot.assets[0].funding_rate == 0.0001
     assert snapshot.assets[0].open_interest == 1000
     assert snapshot.assets[0].open_interest_change_1h is None
+    assert snapshot.source_times["coinbase:BTC"] == "1970-01-01T00:10:00Z"
+    assert snapshot.source_times["deribit:BTC"] == "1970-01-01T00:00:01Z"
+    assert len(snapshot.payload_hashes["coinbase:BTC"]) == 64
+    assert snapshot.available_time
 
 
 def test_live_adapter_rejects_short_candle_history():

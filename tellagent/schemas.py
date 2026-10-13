@@ -22,6 +22,10 @@ class MarketSnapshot(BaseModel):
     as_of: str
     sources: List[str] = Field(min_length=1)
     assets: List[AssetSnapshot] = Field(min_length=1)
+    source_times: Dict[str, str] = Field(default_factory=dict)
+    payload_hashes: Dict[str, str] = Field(default_factory=dict)
+    available_time: Optional[str] = None
+    received_time: Optional[str] = None
 
 
 class EvidenceBundle(BaseModel):
@@ -115,6 +119,23 @@ class ResearchGuidance(BaseModel):
     focus: List[str] = Field(default_factory=list)
     factor_candidates: List[str] = Field(default_factory=list)
     invalidation_conditions: List[str] = Field(default_factory=list)
+
+
+class FrameLedgerRecord(BaseModel):
+    """Immutable point-in-time record of one asset frame."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: str
+    recorded_at: str
+    available_time: str
+    received_time: str
+    sources: List[str]
+    source_times: Dict[str, str]
+    payload_hashes: Dict[str, str]
+    asset_snapshot: AssetSnapshot
+    frame: MarketStateFrame
+    feature_version: str = "tellagent.metrics.v1"
 
 
 class MemoryRecord(BaseModel):
