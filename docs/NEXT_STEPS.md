@@ -22,7 +22,7 @@
 - [x] 用达到覆盖要求的历史基线替换对应固定阈值；
 - [ ] RuleBased 与远程 Jev 影子对比；
 - [x] Outcome 校准汇总报告；
-- [ ] WorldQuant expression 草稿导出。
+- [x] WorldQuant expression 草稿导出。
 
 黑客松 Demo 默认使用本地规则 Observer。远程 Jev 接口保留，但 Jev 不是项目运行前提；只有真实对比证明有增益后，才考虑让它参与正式门控。
 
@@ -223,7 +223,7 @@ WorldQuant BRAIN 可以作为外部验证端。tellagent 负责生成带上下�
 6. RuleBased 与 Jev 影子对比
 7. Evidence ID 化
 8. FactorHypothesis 和本地验证格式
-9. WorldQuant expression 草稿导出
+9. WorldQuant expression 草稿导出（已完成；保留字段映射占位，不自动提交）
 ```
 
 ## 八、暂时不要做

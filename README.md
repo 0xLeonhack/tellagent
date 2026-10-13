@@ -68,7 +68,7 @@ Observer 输出四种市场状态之一：
 
 > **记忆**是轻量 append-only JSONL（`memory.jsonl`），只保留通过门控的上下文，不保存每一帧原始行情；检索按资产、状态与标签重叠度排序，把相近的历史判断注入强模型。
 
-完整审计数据分层保存：每帧状态写入 `frames/`，每次判断写入 `judgments/`，重要研究写入 `memory.jsonl`，到期复盘写入 `outcomes/`，因子假设写入 `factor_hypotheses.jsonl`。这些文件都位于 `.tellagent/`，无需数据库。
+完整审计数据分层保存：每帧状态写入 `frames/`，每次判断写入 `judgments/`，重要研究写入 `memory.jsonl`，到期复盘写入 `outcomes/`，因子假设写入 `factor_hypotheses.jsonl`，WorldQuant 研究草稿写入 `worldquant_drafts.md`。这些文件都位于 `.tellagent/`，无需数据库。
 
 ---
 
