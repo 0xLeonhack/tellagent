@@ -2,12 +2,21 @@ import json
 import os
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Dict, List, Tuple
+from typing import Dict, List, Protocol, Tuple
 
 import httpx
 
 from .metrics import analyze_asset, classify_state, oi_signal
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketStateFrame, MarketSnapshot
+
+
+class JudgmentProvider(Protocol):
+    """Replaceable structured market judgment provider."""
+
+    provider: str
+    model_version: str
+
+    def judge(self, frame: MarketStateFrame) -> ContinuousJudgment: ...
 
 
 def build_state_frame(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketStateFrame:

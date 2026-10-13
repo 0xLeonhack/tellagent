@@ -5,7 +5,7 @@ from typing import Callable, List, Optional
 from .gate import should_investigate
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
-from .observer import RuleBasedJevObserver, build_state_frame
+from .observer import JudgmentProvider, RuleBasedJevObserver, build_state_frame
 from .review import OutcomeReviewer
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord, ResearchGuidance
 from .strategy import build_research_guidance
@@ -15,9 +15,6 @@ ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
 ContextualReportGenerator = Callable[
     [MarketSnapshot, AssetSnapshot, ContinuousJudgment, str], MarketReport
 ]
-Observer = RuleBasedJevObserver
-
-
 @dataclass(frozen=True)
 class ResearchOutcome:
     judgment: ContinuousJudgment
@@ -33,7 +30,7 @@ def process_snapshot(
     report_generator: Optional[ReportGenerator] = None,
     asset: Optional[str] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
-    observer: Optional[Observer] = None,
+    observer: Optional[JudgmentProvider] = None,
     ledger: Optional[JsonlLedger] = None,
     reviewer: Optional[OutcomeReviewer] = None,
 ) -> List[ResearchOutcome]:
@@ -99,7 +96,7 @@ def run_research(
     memory: JsonlMemory,
     report_generator: Optional[ReportGenerator] = None,
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
-    observer: Optional[Observer] = None,
+    observer: Optional[JudgmentProvider] = None,
     ledger: Optional[JsonlLedger] = None,
     reviewer: Optional[OutcomeReviewer] = None,
     asset: Optional[str] = None,
