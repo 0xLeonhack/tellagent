@@ -243,6 +243,18 @@ class FactorResult(BaseModel):
     notes: str = ""
 
 
+class OutcomeCalibration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: str
+    horizon: Literal["6h", "24h", "7d"]
+    sample_count: int = Field(ge=1)
+    average_return: Optional[float] = None
+    average_max_favorable_excursion: Optional[float] = None
+    average_max_adverse_excursion: Optional[float] = None
+    invalidation_rate: float = Field(ge=0, le=1)
+
+
 class MemoryRecord(BaseModel):
     """A compact research context retained for later related judgments."""
 

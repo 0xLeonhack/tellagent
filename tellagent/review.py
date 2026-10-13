@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -11,6 +12,7 @@ from .schemas import (
     MarketSnapshot,
     MarketStateFrame,
     OutcomeReview,
+    OutcomeCalibration,
     ResearchEvent,
 )
 
@@ -83,7 +85,37 @@ class OutcomeReviewer:
                 self._append(path, review.model_dump_json())
                 existing.add((event.event_id, horizon))
                 completed.append(review)
+        if completed:
+            self.write_calibration_report()
         return completed
+
+    def calibration_summary(self) -> List[OutcomeCalibration]:
+        groups = {}
+        for review in self.reviews():
+            groups.setdefault((review.original_state, review.horizon), []).append(review)
+        summaries = []
+        for (state, horizon), reviews in sorted(groups.items()):
+            summaries.append(OutcomeCalibration(
+                state=state,
+                horizon=horizon,
+                sample_count=len(reviews),
+                average_return=_average(item.realized_return for item in reviews),
+                average_max_favorable_excursion=_average(
+                    item.max_favorable_excursion for item in reviews
+                ),
+                average_max_adverse_excursion=_average(
+                    item.max_adverse_excursion for item in reviews
+                ),
+                invalidation_rate=sum(item.invalidation_triggered for item in reviews) / len(reviews),
+            ))
+        return summaries
+
+    def write_calibration_report(self) -> Path:
+        path = self.root / "calibration_report.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = [item.model_dump() for item in self.calibration_summary()]
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return path
 
     @staticmethod
     def _append(path: Path, payload: str) -> None:
@@ -151,6 +183,11 @@ def _relative_change(current: Optional[float], original: Optional[float]) -> Opt
     if current is None or original in {None, 0}:
         return None
     return (current - original) / original
+
+
+def _average(values) -> Optional[float]:
+    available = [value for value in values if value is not None]
+    return None if not available else sum(available) / len(available)
 
 
 def _parse_time(value: str) -> datetime:
