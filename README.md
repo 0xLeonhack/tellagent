@@ -167,10 +167,16 @@ tellagent/
   gate.py         evaluate_gate / should_investigate
   analyst.py      OpenAI-compatible 强 Analyst
   memory.py       append-only JSONL 记忆与检索
+  ledger.py       每帧 Frame / Judgment 的 Point-in-Time 账本
+  trends.py       多帧概率、持续性和状态翻转特征
+  calibration.py 历史 percentile / MAD / robust z-score
+  review.py       6h / 24h / 7d 确定性复盘
+  evidence.py     稳定证据 ID 与引用校验
+  factors.py      因子假设与验证结果账本
   research.py     唯一的循环编排入口
   renderer.py     Rich 报告
   schemas.py      Pydantic 契约
-tests/            20 个单元与集成测试
+tests/            单元与集成测试
 ```
 
 运行测试：

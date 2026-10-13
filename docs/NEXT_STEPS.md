@@ -8,6 +8,24 @@
 
 下一阶段不继续堆叠状态、数据源或 Agent，而是补齐“判断之后发生了什么”的验证闭环。
 
+## 当前进度
+
+- [x] 按日 `frames/*.jsonl` Point-in-Time 账本；
+- [x] 按日 `judgments/*.jsonl` 完整判断流；
+- [x] Gate 使用真正相邻的 Judgment；
+- [x] 1 / 3 / 12 帧概率趋势、EWMA、持续性和翻转次数；
+- [x] 6h / 24h / 7d 确定性 Outcome Review；
+- [x] `events.jsonl` 与 `outcomes/*.jsonl`；
+- [x] 历史 median / MAD / percentile / robust z-score 基线上下文；
+- [x] 稳定 Evidence ID；
+- [x] `factor_hypotheses.jsonl` 和 `factor_results.jsonl` 数据契约；
+- [ ] 用历史基线正式替换固定状态阈值；
+- [ ] RuleBased 与远程 Jev 影子对比；
+- [ ] Outcome 校准汇总报告；
+- [ ] WorldQuant expression 草稿导出。
+
+黑客松 Demo 默认使用本地规则 Observer。远程 Jev 接口保留，但 Jev 不是项目运行前提；只有真实对比证明有增益后，才考虑让它参与正式门控。
+
 ## 一、最高优先级：Point-in-Time 判断流
 
 当前 `memory.jsonl` 只保存通过 Gate 的重要判断，适合上下文记忆，但不适合重建完整的连续判断轨迹。
