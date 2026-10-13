@@ -172,6 +172,20 @@ class OutcomeReview(BaseModel):
     invalidation_triggered: bool
 
 
+class JudgmentTrend(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset: str
+    state: str
+    probability_delta_1: Optional[float] = None
+    probability_delta_3: Optional[float] = None
+    probability_delta_12: Optional[float] = None
+    probability_ewma_12: float
+    consecutive_state_frames: int = Field(ge=1)
+    state_flips_12: int = Field(ge=0)
+    confidence_delta_3: Optional[float] = None
+
+
 class MemoryRecord(BaseModel):
     """A compact research context retained for later related judgments."""
 

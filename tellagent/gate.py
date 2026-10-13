@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .schemas import ContinuousJudgment
+from .schemas import ContinuousJudgment, JudgmentTrend
 
 
 class GateDecision(BaseModel):
@@ -18,6 +18,7 @@ def evaluate_gate(
     current: ContinuousJudgment,
     previous: Optional[ContinuousJudgment] = None,
     event_open: bool = False,
+    trend: Optional[JudgmentTrend] = None,
 ) -> GateDecision:
     """Deterministically decide whether Jev output reaches the strong model."""
     event_key = "{}:{}".format(current.asset, current.selected_value)
@@ -27,7 +28,15 @@ def evaluate_gate(
         return GateDecision(action="silent", event_key=event_key, reason="initial judgment is not actionable")
     delta = round(current.probabilities.get(current.selected_value, 0.0) - previous.probabilities.get(current.selected_value, 0.0), 4)
     changed = current.selected_value != previous.selected_value
-    jumped = delta >= 0.2
+    trend_deltas = [] if trend is None else [
+        value for value in (
+            trend.probability_delta_1,
+            trend.probability_delta_3,
+            trend.probability_delta_12,
+        ) if value is not None
+    ]
+    strongest_delta = max([delta] + trend_deltas)
+    jumped = strongest_delta >= 0.2
     priority_rank = {"silent": 0, "watch": 1, "significant": 2, "urgent": 3}
     priority_escalated = priority_rank[current.research_priority] > priority_rank[previous.research_priority]
     conflicts_changed = set(current.contradicting_roles) != set(previous.contradicting_roles)
@@ -36,7 +45,7 @@ def evaluate_gate(
         if changed:
             reasons.append("state changed")
         if jumped:
-            reasons.append("probability jumped by {:.2f}".format(delta))
+            reasons.append("probability jumped by {:.2f}".format(strongest_delta))
         if priority_escalated:
             reasons.append("priority escalated to {}".format(current.research_priority))
         if conflicts_changed:
@@ -45,7 +54,7 @@ def evaluate_gate(
             action="update_event" if event_open else "open_event",
             event_key=event_key,
             reason="; ".join(reasons),
-            probability_delta=delta,
+            probability_delta=strongest_delta,
         )
     return GateDecision(
         action="silent",
@@ -59,7 +68,8 @@ def should_investigate(
     current: ContinuousJudgment,
     previous: Optional[ContinuousJudgment] = None,
     event_open: bool = False,
+    trend: Optional[JudgmentTrend] = None,
 ) -> bool:
     """Decide whether a stronger model should receive this judgment."""
-    decision = evaluate_gate(current, previous, event_open)
+    decision = evaluate_gate(current, previous, event_open, trend)
     return decision.action in {"open_event", "update_event"}

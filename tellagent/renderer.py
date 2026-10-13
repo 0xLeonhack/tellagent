@@ -14,6 +14,9 @@ def render_reports(outcomes: Iterable[ResearchOutcome], console: Console = None)
     console.print("研究提示，不是交易建议。\n")
     for outcome in outcomes:
         _print_judgment(console, outcome.judgment)
+        console.print("  • 状态持续: {} 帧 · 近 12 帧翻转: {} 次".format(
+            outcome.trend.consecutive_state_frames, outcome.trend.state_flips_12
+        ))
         _print_guidance(console, outcome.guidance)
         if outcome.report is not None:
             _print_report(console, outcome.report)

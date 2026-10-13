@@ -7,8 +7,17 @@ from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
 from .observer import JudgmentProvider, RuleBasedJevObserver, build_state_frame
 from .review import OutcomeReviewer
-from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord, ResearchGuidance
+from .schemas import (
+    AssetSnapshot,
+    ContinuousJudgment,
+    JudgmentTrend,
+    MarketReport,
+    MarketSnapshot,
+    MemoryRecord,
+    ResearchGuidance,
+)
 from .strategy import build_research_guidance
+from .trends import compute_judgment_trend
 
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
@@ -18,6 +27,7 @@ ContextualReportGenerator = Callable[
 @dataclass(frozen=True)
 class ResearchOutcome:
     judgment: ContinuousJudgment
+    trend: JudgmentTrend
     guidance: ResearchGuidance
     investigated: bool
     report: Optional[MarketReport]
@@ -45,13 +55,18 @@ def process_snapshot(
         frame = build_state_frame(snapshot, item)
         if ledger:
             ledger.append_frame(snapshot, item, frame)
-            previous = ledger.latest_judgment(item.symbol)
+            judgment_history = ledger.judgments(item.symbol)
+            previous = judgment_history[-1] if judgment_history else None
         else:
+            judgment_history = [record.judgment for record in records if record.asset.upper() == item.symbol.upper()]
             previous = _latest_judgment(records, item.symbol)
         judgment = observer.judge(frame)
+        trend = compute_judgment_trend(judgment, judgment_history)
         if ledger:
             ledger.append_judgment(judgment)
-        investigate = should_investigate(judgment, previous, event_open=previous is not None)
+        investigate = should_investigate(
+            judgment, previous, event_open=previous is not None, trend=trend
+        )
         report = None
         if investigate:
             related_context = memory_summary(
@@ -73,7 +88,9 @@ def process_snapshot(
             records.append(memory_record)
             if reviewer:
                 reviewer.open_event(snapshot, item, frame, judgment, report)
-        outcomes.append(ResearchOutcome(judgment, build_research_guidance(judgment), investigate, report, memory_record))
+        outcomes.append(ResearchOutcome(
+            judgment, trend, build_research_guidance(judgment), investigate, report, memory_record
+        ))
     return outcomes
 
 
