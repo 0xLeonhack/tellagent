@@ -62,6 +62,7 @@ def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> t
     ticker = _get_json(client, "{}/public/ticker".format(DERIBIT_API), {"instrument_name": "{}-PERPETUAL".format(symbol)})
     asset = AssetSnapshot(
         symbol=symbol,
+        spot_price=latest_close,
         price_change_1h=(latest_close - previous_close) / previous_close,
         price_change_6h=(latest_close - six_hour_close) / six_hour_close,
         spot_volume_change_1h=(latest_volume - previous_volume) / previous_volume,

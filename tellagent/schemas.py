@@ -7,6 +7,7 @@ class AssetSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str
+    spot_price: Optional[float] = None
     price_change_1h: Optional[float] = None
     price_change_6h: Optional[float] = None
     spot_volume_change_1h: Optional[float] = None
@@ -136,6 +137,39 @@ class FrameLedgerRecord(BaseModel):
     asset_snapshot: AssetSnapshot
     frame: MarketStateFrame
     feature_version: str = "tellagent.metrics.v1"
+
+
+class ResearchEvent(BaseModel):
+    """Frozen input for deterministic future outcome reviews."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    asset: str
+    opened_at: str
+    original_snapshot: AssetSnapshot
+    original_frame: MarketStateFrame
+    original_judgment: ContinuousJudgment
+    report: Optional[MarketReport] = None
+    review_due_at: Dict[str, str]
+
+
+class OutcomeReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_id: str
+    event_id: str
+    asset: str
+    horizon: Literal["6h", "24h", "7d"]
+    reviewed_at: str
+    original_state: str
+    realized_return: Optional[float] = None
+    max_favorable_excursion: Optional[float] = None
+    max_adverse_excursion: Optional[float] = None
+    funding_change: Optional[float] = None
+    open_interest_change: Optional[float] = None
+    spot_confirmation: Optional[bool] = None
+    invalidation_triggered: bool
 
 
 class MemoryRecord(BaseModel):

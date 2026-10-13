@@ -6,6 +6,7 @@ from .gate import should_investigate
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
 from .observer import RuleBasedJevObserver, build_state_frame
+from .review import OutcomeReviewer
 from .schemas import AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot, MemoryRecord, ResearchGuidance
 from .strategy import build_research_guidance
 
@@ -34,6 +35,7 @@ def process_snapshot(
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
     observer: Optional[Observer] = None,
     ledger: Optional[JsonlLedger] = None,
+    reviewer: Optional[OutcomeReviewer] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
     observer = observer or RuleBasedJevObserver()
@@ -72,6 +74,8 @@ def process_snapshot(
                 report=report,
             )
             records.append(memory_record)
+            if reviewer:
+                reviewer.open_event(snapshot, item, frame, judgment, report)
         outcomes.append(ResearchOutcome(judgment, build_research_guidance(judgment), investigate, report, memory_record))
     return outcomes
 
@@ -97,6 +101,7 @@ def run_research(
     contextual_report_generator: Optional[ContextualReportGenerator] = None,
     observer: Optional[Observer] = None,
     ledger: Optional[JsonlLedger] = None,
+    reviewer: Optional[OutcomeReviewer] = None,
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -107,9 +112,13 @@ def run_research(
         raise ValueError("cycles and interval must be zero or greater")
     completed = 0
     while cycles == 0 or completed < cycles:
+        snapshot = snapshot_loader()
         outcomes = process_snapshot(
-            snapshot_loader(), memory, report_generator, asset, contextual_report_generator, observer, ledger
+            snapshot, memory, report_generator, asset, contextual_report_generator,
+            observer, ledger, reviewer,
         )
+        if reviewer and ledger:
+            reviewer.review_due(snapshot, ledger)
         if on_cycle:
             on_cycle(outcomes)
         completed += 1

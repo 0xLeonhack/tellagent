@@ -11,6 +11,7 @@ from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedJevObserver
 from .renderer import render_reports
 from .research import ResearchOutcome, outcome_summary, run_research
+from .review import OutcomeReviewer
 
 app = typer.Typer(add_completion=False, help="BTC/ETH continuous market research")
 
@@ -48,6 +49,7 @@ def research(
             report_generator = build_deterministic_report
         memory = JsonlMemory(memory_path)
         ledger = JsonlLedger(memory_path.parent)
+        reviewer = OutcomeReviewer(memory_path.parent)
         live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
@@ -67,6 +69,7 @@ def research(
             contextual_report_generator=contextual_generator,
             observer=observer,
             ledger=ledger,
+            reviewer=reviewer,
             on_cycle=on_cycle,
         )
     except (OSError, ValueError) as exc:

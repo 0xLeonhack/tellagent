@@ -55,6 +55,20 @@ class JsonlLedger:
                     records.append(judgment)
         return records
 
+    def frames(self, asset: Optional[str] = None) -> List[FrameLedgerRecord]:
+        records: List[FrameLedgerRecord] = []
+        directory = self.root / "frames"
+        if not directory.exists():
+            return records
+        for path in sorted(directory.glob("*.jsonl")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                record = FrameLedgerRecord.model_validate_json(line)
+                if asset is None or record.frame.asset.upper() == asset.upper():
+                    records.append(record)
+        return records
+
     def latest_judgment(self, asset: str) -> Optional[ContinuousJudgment]:
         matches = self.judgments(asset)
         return matches[-1] if matches else None
