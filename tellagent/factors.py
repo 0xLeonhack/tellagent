@@ -60,6 +60,7 @@ class JsonlFactorStore:
         existing = {item.hypothesis_id for item in self.hypotheses()}
         if hypothesis.hypothesis_id not in existing:
             self._append(path, hypothesis.model_dump_json())
+            self.write_worldquant_drafts()
 
     def append_result(self, result: FactorResult) -> None:
         self._append(self.root / "factor_results.jsonl", result.model_dump_json())
@@ -69,6 +70,12 @@ class JsonlFactorStore:
         if not path.exists():
             return []
         return [FactorHypothesis.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def write_worldquant_drafts(self) -> Path:
+        path = self.root / "worldquant_drafts.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(render_worldquant_drafts(self.hypotheses()), encoding="utf-8")
+        return path
 
     @staticmethod
     def _append(path: Path, payload: str) -> None:
@@ -105,6 +112,37 @@ def build_factor_hypotheses(
             test_plan="Evaluate IC, rank IC, grouped returns, turnover, costs, and out-of-sample stability by regime.",
         ))
     return hypotheses
+
+
+def render_worldquant_drafts(hypotheses: List[FactorHypothesis]) -> str:
+    lines = [
+        "# WorldQuant Expression Drafts",
+        "",
+        "> These are research drafts, not directly submittable alphas. Map every placeholder to an available BRAIN field and validate operators, delay, universe, neutralization, turnover, correlation, and out-of-sample performance.",
+        "",
+    ]
+    for item in hypotheses:
+        lines.extend([
+            "## {} · {}".format(item.asset, item.name),
+            "",
+            "- Hypothesis ID: `{}`".format(item.hypothesis_id),
+            "- Regime: `{}`".format(item.regime),
+            "- Horizon: `{}`".format(item.horizon),
+            "- Expected direction: `{}`".format(item.expected_direction),
+            "- Invalidation: {}".format(item.invalidation_condition),
+            "",
+            "Expression concept:",
+            "",
+            "```text",
+            item.formula_draft,
+            "```",
+            "",
+            "Required field mapping:",
+            "",
+        ])
+        lines.extend("- `{}` → `<BRAIN_FIELD>`".format(field) for field in item.inputs)
+        lines.extend(["", "Validation: {}".format(item.test_plan), ""])
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _now() -> str:

@@ -19,6 +19,10 @@ def test_factor_hypotheses_are_structured_and_deduplicated(tmp_path):
     store.append_hypothesis(hypotheses[0])
     store.append_hypothesis(hypotheses[0])
     assert len(store.hypotheses()) == 1
+    draft = (tmp_path / "worldquant_drafts.md").read_text()
+    assert "not directly submittable alphas" in draft
+    assert "<BRAIN_FIELD>" in draft
+    assert hypotheses[0].formula_draft in draft
 
 
 def test_factor_result_contract_can_be_persisted(tmp_path):
