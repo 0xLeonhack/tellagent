@@ -4,6 +4,7 @@ from typing import Callable, List, Optional
 
 from .gate import should_investigate
 from .calibration import compute_feature_baselines
+from .factors import JsonlFactorStore, build_factor_hypotheses
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
 from .observer import JudgmentProvider, RuleBasedJevObserver, build_state_frame
@@ -12,6 +13,7 @@ from .schemas import (
     AssetSnapshot,
     ContinuousJudgment,
     JudgmentTrend,
+    FactorHypothesis,
     MarketReport,
     MarketSnapshot,
     MemoryRecord,
@@ -33,6 +35,7 @@ class ResearchOutcome:
     investigated: bool
     report: Optional[MarketReport]
     memory_record: Optional[MemoryRecord]
+    factor_hypotheses: List[FactorHypothesis]
 
 
 def process_snapshot(
@@ -44,6 +47,7 @@ def process_snapshot(
     observer: Optional[JudgmentProvider] = None,
     ledger: Optional[JsonlLedger] = None,
     reviewer: Optional[OutcomeReviewer] = None,
+    factor_store: Optional[JsonlFactorStore] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
     observer = observer or RuleBasedJevObserver()
@@ -65,6 +69,7 @@ def process_snapshot(
             previous = _latest_judgment(records, item.symbol)
         judgment = observer.judge(frame)
         trend = compute_judgment_trend(judgment, judgment_history)
+        guidance = build_research_guidance(judgment)
         if ledger:
             ledger.append_judgment(judgment)
         investigate = should_investigate(
@@ -81,6 +86,7 @@ def process_snapshot(
                 report = report_generator(snapshot, item)
         summary = report.headline if report else "{}: {}".format(judgment.selected_value, judgment.research_priority)
         memory_record = None
+        factor_hypotheses = []
         if investigate:
             memory_record = memory.append(
                 judgment,
@@ -91,8 +97,12 @@ def process_snapshot(
             records.append(memory_record)
             if reviewer:
                 reviewer.open_event(snapshot, item, frame, judgment, report)
+            factor_hypotheses = build_factor_hypotheses(judgment, guidance, report)
+            if factor_store:
+                for hypothesis in factor_hypotheses:
+                    factor_store.append_hypothesis(hypothesis)
         outcomes.append(ResearchOutcome(
-            judgment, trend, build_research_guidance(judgment), investigate, report, memory_record
+            judgment, trend, guidance, investigate, report, memory_record, factor_hypotheses
         ))
     return outcomes
 
@@ -119,6 +129,7 @@ def run_research(
     observer: Optional[JudgmentProvider] = None,
     ledger: Optional[JsonlLedger] = None,
     reviewer: Optional[OutcomeReviewer] = None,
+    factor_store: Optional[JsonlFactorStore] = None,
     asset: Optional[str] = None,
     cycles: int = 1,
     interval: float = 300.0,
@@ -132,7 +143,7 @@ def run_research(
         snapshot = snapshot_loader()
         outcomes = process_snapshot(
             snapshot, memory, report_generator, asset, contextual_report_generator,
-            observer, ledger, reviewer,
+            observer, ledger, reviewer, factor_store,
         )
         if reviewer and ledger:
             reviewer.review_due(snapshot, ledger)

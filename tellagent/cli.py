@@ -6,6 +6,7 @@ import typer
 from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
 from .ledger import JsonlLedger
+from .factors import JsonlFactorStore
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedJevObserver
@@ -50,6 +51,7 @@ def research(
         memory = JsonlMemory(memory_path)
         ledger = JsonlLedger(memory_path.parent)
         reviewer = OutcomeReviewer(memory_path.parent)
+        factor_store = JsonlFactorStore(memory_path.parent)
         live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
@@ -70,6 +72,7 @@ def research(
             observer=observer,
             ledger=ledger,
             reviewer=reviewer,
+            factor_store=factor_store,
             on_cycle=on_cycle,
         )
     except (OSError, ValueError) as exc:

@@ -210,6 +210,39 @@ class JudgmentTrend(BaseModel):
     confidence_delta_3: Optional[float] = None
 
 
+class FactorHypothesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hypothesis_id: str
+    created_at: str
+    source_frame_id: str
+    asset: str
+    name: str
+    regime: str
+    inputs: List[str]
+    formula_draft: str
+    expected_direction: str
+    horizon: str
+    rationale: str
+    invalidation_condition: str
+    test_plan: str
+
+
+class FactorResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result_id: str
+    hypothesis_id: str
+    tested_at: str
+    sample: str
+    ic: Optional[float] = None
+    rank_ic: Optional[float] = None
+    turnover: Optional[float] = None
+    cost_adjusted_return: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    notes: str = ""
+
+
 class MemoryRecord(BaseModel):
     """A compact research context retained for later related judgments."""
 
