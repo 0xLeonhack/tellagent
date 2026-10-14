@@ -18,6 +18,7 @@ from .schemas import (
 
 
 HORIZONS = {"6h": timedelta(hours=6), "24h": timedelta(hours=24), "7d": timedelta(days=7)}
+MAX_REVIEW_SAMPLE_DELAY = timedelta(minutes=15)
 
 
 class OutcomeReviewer:
@@ -71,16 +72,27 @@ class OutcomeReviewer:
     def review_due(self, snapshot: MarketSnapshot, ledger: JsonlLedger) -> List[OutcomeReview]:
         now = _parse_time(snapshot.as_of)
         existing = {(item.event_id, item.horizon) for item in self.reviews()}
-        assets = {item.symbol: item for item in snapshot.assets}
         completed = []
         for event in self.events():
-            current = assets.get(event.asset)
-            if current is None:
-                continue
+            frames = ledger.frames(event.asset)
             for horizon, due_at in event.review_due_at.items():
-                if (event.event_id, horizon) in existing or now < _parse_time(due_at):
+                due = _parse_time(due_at)
+                if (event.event_id, horizon) in existing or now < due:
                     continue
-                review = _build_review(event, horizon, snapshot.as_of, current, ledger.frames(event.asset))
+                sample = _nearest_horizon_frame(frames, event.opened_at, due, now)
+                if sample is None:
+                    review = _insufficient_review(event, horizon, snapshot.as_of)
+                else:
+                    sample_time = _parse_time(sample.frame.as_of)
+                    review = _build_review(
+                        event,
+                        horizon,
+                        snapshot.as_of,
+                        sample.frame.as_of,
+                        int((sample_time - due).total_seconds()),
+                        sample.asset_snapshot,
+                        frames,
+                    )
                 path = self.root / "outcomes" / "{}.jsonl".format(snapshot.as_of[:10])
                 self._append(path, review.model_dump_json())
                 existing.add((event.event_id, horizon))
@@ -92,6 +104,8 @@ class OutcomeReviewer:
     def calibration_summary(self) -> List[OutcomeCalibration]:
         groups = {}
         for review in self.reviews():
+            if review.status != "complete":
+                continue
             groups.setdefault((review.original_state, review.horizon), []).append(review)
         summaries = []
         for (state, horizon), reviews in sorted(groups.items()):
@@ -106,7 +120,7 @@ class OutcomeReviewer:
                 average_max_adverse_excursion=_average(
                     item.max_adverse_excursion for item in reviews
                 ),
-                invalidation_rate=sum(item.invalidation_triggered for item in reviews) / len(reviews),
+                invalidation_rate=sum(bool(item.invalidation_triggered) for item in reviews) / len(reviews),
             ))
         return summaries
 
@@ -128,6 +142,8 @@ def _build_review(
     event: ResearchEvent,
     horizon: str,
     reviewed_at: str,
+    sample_time: str,
+    sample_delay_seconds: int,
     current: AssetSnapshot,
     frames,
 ) -> OutcomeReview:
@@ -135,7 +151,8 @@ def _build_review(
     returns = []
     if original.spot_price:
         for record in frames:
-            if _parse_time(record.frame.as_of) < _parse_time(event.opened_at):
+            frame_time = _parse_time(record.frame.as_of)
+            if frame_time < _parse_time(event.opened_at) or frame_time > _parse_time(sample_time):
                 continue
             price = record.asset_snapshot.spot_price
             if price is not None:
@@ -153,6 +170,8 @@ def _build_review(
         asset=event.asset,
         horizon=horizon,
         reviewed_at=reviewed_at,
+        sample_time=sample_time,
+        sample_delay_seconds=sample_delay_seconds,
         original_state=event.original_judgment.selected_value,
         realized_return=realized_return,
         max_favorable_excursion=max(returns) if returns else None,
@@ -161,6 +180,36 @@ def _build_review(
         open_interest_change=oi_change,
         spot_confirmation=current.spot_volume_change_1h is not None and current.spot_volume_change_1h > 0.05,
         invalidation_triggered=invalidated,
+    )
+
+
+def _nearest_horizon_frame(frames, opened_at: str, due: datetime, now: datetime):
+    opened = _parse_time(opened_at)
+    eligible = [
+        record for record in frames
+        if opened <= _parse_time(record.frame.as_of) <= now
+    ]
+    if not eligible:
+        return None
+    closest = min(eligible, key=lambda record: abs(_parse_time(record.frame.as_of) - due))
+    if abs(_parse_time(closest.frame.as_of) - due) > MAX_REVIEW_SAMPLE_DELAY:
+        return None
+    return closest
+
+
+def _insufficient_review(
+    event: ResearchEvent,
+    horizon: str,
+    reviewed_at: str,
+) -> OutcomeReview:
+    return OutcomeReview(
+        review_id="{}:{}".format(event.event_id, horizon),
+        event_id=event.event_id,
+        asset=event.asset,
+        horizon=horizon,
+        reviewed_at=reviewed_at,
+        status="insufficient_data",
+        original_state=event.original_judgment.selected_value,
     )
 
 

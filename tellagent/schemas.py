@@ -188,6 +188,9 @@ class OutcomeReview(BaseModel):
     asset: str
     horizon: Literal["6h", "24h", "7d"]
     reviewed_at: str
+    sample_time: Optional[str] = None
+    sample_delay_seconds: Optional[int] = None
+    status: Literal["complete", "insufficient_data"] = "complete"
     original_state: str
     realized_return: Optional[float] = None
     max_favorable_excursion: Optional[float] = None
@@ -195,7 +198,7 @@ class OutcomeReview(BaseModel):
     funding_change: Optional[float] = None
     open_interest_change: Optional[float] = None
     spot_confirmation: Optional[bool] = None
-    invalidation_triggered: bool
+    invalidation_triggered: Optional[bool] = None
 
 
 class JudgmentTrend(BaseModel):

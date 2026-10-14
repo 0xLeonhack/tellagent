@@ -34,6 +34,8 @@ def test_outcome_reviewer_creates_due_reviews_without_model(tmp_path):
     reviews = reviewer.review_due(later, ledger)
     assert len(reviews) == 1
     assert reviews[0].horizon == "6h"
+    assert reviews[0].status == "complete"
+    assert reviews[0].sample_time == "2026-10-08T06:00:00Z"
     assert reviews[0].realized_return == pytest.approx(0.05)
     assert reviews[0].open_interest_change == pytest.approx(-0.05)
     assert reviews[0].invalidation_triggered is True
@@ -52,5 +54,29 @@ def test_outcome_review_is_idempotent(tmp_path):
     judgment = RuleBasedJevObserver().judge(frame)
     reviewer.open_event(original, original.assets[0], frame, judgment, None)
     later = _snapshot("2026-10-08T06:00:00Z", 101.0, 990.0, -0.01)
+    later_frame = build_state_frame(later, later.assets[0])
+    ledger.append_frame(later, later.assets[0], later_frame)
     assert len(reviewer.review_due(later, ledger)) == 1
     assert reviewer.review_due(later, ledger) == []
+
+
+def test_late_restart_does_not_use_future_data_for_earlier_horizons(tmp_path):
+    ledger = JsonlLedger(tmp_path)
+    reviewer = OutcomeReviewer(tmp_path)
+    original = _snapshot("2026-10-08T00:00:00Z", 100.0, 1000.0, 0.02)
+    original_frame = build_state_frame(original, original.assets[0])
+    judgment = RuleBasedJevObserver().judge(original_frame)
+    ledger.append_frame(original, original.assets[0], original_frame)
+    reviewer.open_event(original, original.assets[0], original_frame, judgment, None)
+
+    seven_days = _snapshot("2026-10-15T00:00:00Z", 120.0, 900.0, -0.03)
+    seven_day_frame = build_state_frame(seven_days, seven_days.assets[0])
+    ledger.append_frame(seven_days, seven_days.assets[0], seven_day_frame)
+    reviews = reviewer.review_due(seven_days, ledger)
+    by_horizon = {review.horizon: review for review in reviews}
+    assert by_horizon["6h"].status == "insufficient_data"
+    assert by_horizon["24h"].status == "insufficient_data"
+    assert by_horizon["6h"].realized_return is None
+    assert by_horizon["7d"].status == "complete"
+    assert by_horizon["7d"].realized_return == pytest.approx(0.2)
+    assert len(reviewer.calibration_summary()) == 1
