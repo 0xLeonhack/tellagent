@@ -12,21 +12,26 @@ COINBASE_API = "https://api.exchange.coinbase.com"
 DERIBIT_API = "https://www.deribit.com/api/v2"
 
 
-def load_live_snapshot(timeout: float = 8.0, client: Optional[httpx.Client] = None) -> MarketSnapshot:
+def load_live_snapshot(
+    timeout: float = 8.0,
+    client: Optional[httpx.Client] = None,
+    now: Optional[datetime] = None,
+) -> MarketSnapshot:
     """Fetch a small public BTC/ETH snapshot without storing credentials or state."""
     owns_client = client is None
     client = client or httpx.Client(timeout=timeout)
+    collection_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     try:
         assets = []
         source_times = {}
         payload_hashes = {}
         for symbol in ("BTC", "ETH"):
             candles = _get_json(client, "{}/products/{}-USD/candles".format(COINBASE_API, symbol), {"granularity": 3600})
-            asset, metadata = _asset_from_sources(client, symbol, candles)
+            asset, metadata = _asset_from_sources(client, symbol, candles, collection_time)
             assets.append(asset)
             source_times.update(metadata["source_times"])
             payload_hashes.update(metadata["payload_hashes"])
-        received_time = _now()
+        received_time = _format_time(collection_time) if now is not None else _now()
         return MarketSnapshot(
             as_of=received_time,
             sources=["Coinbase", "Deribit"],
@@ -41,14 +46,21 @@ def load_live_snapshot(timeout: float = 8.0, client: Optional[httpx.Client] = No
             client.close()
 
 
-def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> tuple[AssetSnapshot, dict]:
-    if not isinstance(candles, list) or len(candles) < 8:
-        raise ValueError("Coinbase returned fewer than eight hourly candles for {}".format(symbol))
-    ordered = sorted(candles, key=lambda candle: candle[0])
-    completed = ordered[:-1]
+def _asset_from_sources(
+    client: httpx.Client,
+    symbol: str,
+    candles: object,
+    now: datetime,
+) -> tuple[AssetSnapshot, dict]:
+    if not isinstance(candles, list) or len(candles) < 7:
+        raise ValueError("Coinbase returned fewer than seven hourly candles for {}".format(symbol))
+    ordered = sorted(candles, key=lambda candle: float(candle[0]))
+    completed = [candle for candle in ordered if float(candle[0]) + 3600 <= now.timestamp()]
     if len(completed) < 7:
         raise ValueError("Coinbase returned insufficient completed candles for {}".format(symbol))
-    previous, latest, six_hours_ago = completed[-2], completed[-1], completed[-7]
+    window = completed[-7:]
+    _validate_hourly_continuity(window, symbol)
+    previous, latest, six_hours_ago = window[-2], window[-1], window[0]
     try:
         previous_close = float(previous[4])
         latest_close = float(latest[4])
@@ -73,7 +85,7 @@ def _asset_from_sources(client: httpx.Client, symbol: str, candles: object) -> t
     ticker_result = ticker.get("result", {}) if isinstance(ticker, dict) else {}
     metadata = {
         "source_times": {
-            "coinbase:{}".format(symbol): _epoch_iso(float(latest[0])),
+            "coinbase:{}".format(symbol): _epoch_iso(float(latest[0]) + 3600),
             "deribit:{}".format(symbol): _epoch_iso(float(ticker_result["timestamp"]) / 1000)
             if ticker_result.get("timestamp") is not None else _now(),
         },
@@ -134,6 +146,16 @@ def _payload_hash(payload: object) -> str:
 
 def _epoch_iso(value: float) -> str:
     return datetime.fromtimestamp(value, timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _validate_hourly_continuity(candles: list, symbol: str) -> None:
+    timestamps = [float(candle[0]) for candle in candles]
+    if any(right - left != 3600 for left, right in zip(timestamps, timestamps[1:])):
+        raise ValueError("Coinbase returned non-contiguous hourly candles for {}".format(symbol))
+
+
+def _format_time(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _now() -> str:
