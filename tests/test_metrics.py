@@ -59,6 +59,18 @@ def test_spot_confirmation_requires_oi_data():
     assert any("open interest" in item for item in result.evidence.missing)
 
 
+def test_spot_confirmation_rejects_large_negative_oi_change():
+    result = analyze_asset(AssetSnapshot(
+        symbol="BTC",
+        price_change_1h=0.03,
+        price_change_6h=0.05,
+        spot_volume_change_1h=0.08,
+        funding_rate=0.00008,
+        open_interest_change_1h=-0.20,
+    ))
+    assert result.suggested_state == "uncertain"
+
+
 def test_confidence_is_rounded_for_json_output():
     result = analyze_asset(AssetSnapshot(
         symbol="ETH",

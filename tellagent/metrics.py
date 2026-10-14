@@ -39,7 +39,7 @@ def classify_state(
         return "leverage_led"
     if (
         price is not None and price > price_threshold and volume is not None and volume > volume_threshold
-        and oi is not None and oi <= oi_threshold
+        and oi is not None and abs(oi) <= oi_threshold
     ):
         return "spot_confirmed"
     if price is not None and price < -price_threshold and oi is not None and oi < -oi_threshold:
