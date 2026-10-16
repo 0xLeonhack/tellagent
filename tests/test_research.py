@@ -11,7 +11,7 @@ def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_p
     def generator(snapshot, asset):
         calls.append(asset.symbol)
         return MarketReport(
-            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_led",
+            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_expansion_up",
             confidence=0.8, supporting_evidence=["test"], contradicting_evidence=["counter"],
             missing_evidence=[], invalidation_condition="test", data_time=snapshot.as_of,
             sources=snapshot.sources,
@@ -26,7 +26,7 @@ def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_p
     assert outcomes[0].guidance.action == "investigate_now"
 
 
-def test_research_pipeline_skips_strong_model_for_uncertain_snapshot(tmp_path):
+def test_research_pipeline_skips_strong_model_for_insufficient_snapshot(tmp_path):
     snapshot = market_snapshot()
     asset = snapshot.assets[0].model_copy(update={"open_interest_change_1h": None})
     snapshot = snapshot.model_copy(update={"assets": [asset]})
@@ -49,7 +49,7 @@ def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
         lambda: snapshot,
         memory,
         lambda snapshot, asset: MarketReport(
-            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_led",
+            asset=asset.symbol, metrics=asset, headline="test report", state="leverage_expansion_up",
             confidence=0.8, supporting_evidence=["test"], contradicting_evidence=["counter"],
             missing_evidence=[], invalidation_condition="test", data_time=snapshot.as_of,
             sources=snapshot.sources,

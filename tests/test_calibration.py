@@ -53,4 +53,4 @@ def test_asset_uses_ready_calibrated_thresholds():
             "oi_interval": 0.005,
         },
     )
-    assert analyze_asset(asset).suggested_state == "spot_confirmed"
+    assert analyze_asset(asset).suggested_state == "spot_confirmed_up"

@@ -7,7 +7,7 @@ from .calibration import build_strategy_thresholds, compute_feature_baselines
 from .factors import JsonlFactorStore, build_factor_hypotheses
 from .ledger import JsonlLedger
 from .memory import JsonlMemory, memory_summary
-from .observer import JudgmentProvider, RuleBasedJevObserver, build_state_frame
+from .observer import JudgmentProvider, RuleBasedObserver, build_state_frame
 from .review import OutcomeReviewer
 from .schemas import (
     AssetSnapshot,
@@ -50,7 +50,7 @@ def process_snapshot(
     factor_store: Optional[JsonlFactorStore] = None,
 ) -> List[ResearchOutcome]:
     """Run Observer gate, optional strong analysis, and selective memory write."""
-    observer = observer or RuleBasedJevObserver()
+    observer = observer or RuleBasedObserver()
     records = memory.records()
     selected = [item for item in snapshot.assets if not asset or item.symbol.upper() == asset.upper()]
     if not selected:

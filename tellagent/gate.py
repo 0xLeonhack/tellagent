@@ -26,6 +26,15 @@ def evaluate_gate(
         if current.research_priority in {"significant", "urgent"}:
             return GateDecision(action="open_event", event_key=event_key, reason="initial judgment has elevated research priority")
         return GateDecision(action="silent", event_key=event_key, reason="initial judgment is not actionable")
+    if (
+        previous.selected_value in {"insufficient_data", "uncertain"}
+        and current.research_priority in {"silent", "watch"}
+    ):
+        return GateDecision(
+            action="silent",
+            event_key=event_key,
+            reason="data warmup completed without an actionable state",
+        )
     delta = round(current.probabilities.get(current.selected_value, 0.0) - previous.probabilities.get(current.selected_value, 0.0), 4)
     changed = current.selected_value != previous.selected_value
     trend_deltas = [] if trend is None else [

@@ -48,7 +48,7 @@ class AnalystResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     headline: str = Field(min_length=1)
-    state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
+    state: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     supporting_evidence_ids: List[str] = Field(min_length=1)
     contradicting_evidence_ids: List[str] = Field(min_length=1)
@@ -62,7 +62,7 @@ class MarketReport(BaseModel):
     asset: str
     metrics: AssetSnapshot
     headline: str = Field(min_length=1)
-    state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
+    state: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     supporting_evidence: List[str] = Field(min_length=1)
     contradicting_evidence: List[str] = Field(min_length=1)
@@ -80,7 +80,36 @@ class SnapshotAnalysis(BaseModel):
 
     asset: AssetSnapshot
     evidence: EvidenceBundle
-    suggested_state: Literal["leverage_led", "spot_confirmed", "deleveraging", "uncertain"]
+    suggested_state: str
+    assessment: "MarketAssessment"
+
+
+class MarketAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    price_direction: Literal["up", "down", "flat", "unknown"]
+    price_strength: Literal["quiet", "normal", "shock", "unknown"]
+    leverage_change: Literal["expanding", "contracting", "stable", "unknown"]
+    spot_confirmation: Literal["strong", "weak", "absent", "unknown"]
+    funding_state: Literal["long_crowded", "short_crowded", "neutral", "unknown"]
+    alignment: Literal["aligned", "mixed", "conflicting", "insufficient"]
+    data_quality: Literal["complete", "degraded", "insufficient"]
+    regime: Literal[
+        "quiet",
+        "spot_confirmed_up",
+        "spot_confirmed_down",
+        "leverage_expansion_up",
+        "leverage_expansion_down",
+        "position_unwind_up",
+        "position_unwind_down",
+        "broad_participation_up",
+        "broad_participation_down",
+        "unconfirmed_move_up",
+        "unconfirmed_move_down",
+        "conflicting",
+        "insufficient_data",
+    ]
+    risk_flags: List[str] = Field(default_factory=list)
 
 
 class FeatureBaseline(BaseModel):
@@ -111,7 +140,8 @@ class MarketStateFrame(BaseModel):
     quality_summary: Dict[str, str]
     baseline_state: Dict[str, FeatureBaseline] = Field(default_factory=dict)
     strategy_thresholds: Dict[str, float] = Field(default_factory=dict)
-    schema_version: str = "tellagent.market-state.v1"
+    assessment: Optional[MarketAssessment] = None
+    schema_version: str = "tellagent.market-state.v2"
 
 
 class ContinuousJudgment(BaseModel):
@@ -126,6 +156,7 @@ class ContinuousJudgment(BaseModel):
     selected_value: str
     probabilities: Dict[str, float]
     confidence: float = Field(ge=0, le=1)
+    score_kind: Literal["heuristic", "probability"] = "probability"
     supporting_roles: List[str] = Field(default_factory=list)
     contradicting_roles: List[str] = Field(default_factory=list)
     missing_roles: List[str] = Field(default_factory=list)

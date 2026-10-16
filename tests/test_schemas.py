@@ -10,7 +10,7 @@ def test_report_rejects_confidence_outside_range():
             asset="BTC",
             metrics=AssetSnapshot(symbol="BTC"),
             headline="test",
-            state="uncertain",
+            state="insufficient_data",
             confidence=1.1,
             supporting_evidence=["x"],
             contradicting_evidence=["y"],

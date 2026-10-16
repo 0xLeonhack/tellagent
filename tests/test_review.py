@@ -40,7 +40,7 @@ def test_outcome_reviewer_creates_due_reviews_without_model(tmp_path):
     assert reviews[0].open_interest_change == pytest.approx(-0.05)
     assert reviews[0].invalidation_triggered is True
     summary = reviewer.calibration_summary()
-    assert summary[0].state == "leverage_led"
+    assert summary[0].state == "leverage_expansion_up"
     assert summary[0].sample_count == 1
     assert summary[0].invalidation_rate == 1.0
     assert (tmp_path / "calibration_report.json").exists()

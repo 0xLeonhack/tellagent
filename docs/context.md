@@ -35,6 +35,21 @@ agent 判断关系：市场状态、支持/反向证据、研究优先级和有�
 
 系统不自动交易，不提供仓位建议，不依赖模型自由浏览互联网，不用未来修订数据回写历史。
 
+## Market State v2
+
+市场状态不能把价格方向、杠杆变化和现货确认混成一个互斥判断。当前实现先独立计算：
+
+```text
+价格方向与强度
+杠杆扩张 / 收缩 / 稳定
+现货确认强度
+Funding 拥挤状态
+证据关系
+数据质量
+```
+
+再派生 `spot_confirmed_*`、`leverage_expansion_*`、`position_unwind_*`、`broad_participation_*`、`unconfirmed_move_*`、`quiet`、`conflicting` 和 `insufficient_data`。`quiet` 表示没有行情，`conflicting` 表示数据完整但关系冲突，`insufficient_data` 表示关键字段缺失，三者不得合并。
+
 ## 术语
 
 - `available_time`：系统首次能看到观测的时间，回放唯一使用它过滤。

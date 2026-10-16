@@ -8,12 +8,15 @@ tellagent 是一个面向 BTC 和 ETH 的持续市场研究 Agent。
 
 它每五分钟从 Coinbase 和 Deribit 获取真实数据。所有收益率、成交量变化、Funding、Open Interest 和历史阈值都由代码计算，不交给模型猜。
 
-系统先通过一个低成本 Observer 判断四种市场状态：
+系统先把价格方向、杠杆变化、现货确认、Funding 和数据质量分开判断，再生成可读的市场状态：
 
-- `leverage_led`：杠杆主导；
-- `spot_confirmed`：现货确认；
-- `deleveraging`：去杠杆；
-- `uncertain`：证据不足。
+- `spot_confirmed_up/down`：现货确认的上涨或下跌；
+- `leverage_expansion_up/down`：杠杆扩张主导的上涨或下跌；
+- `position_unwind_up/down`：仓位收缩伴随的价格变化；
+- `broad_participation_up/down`：现货和杠杆共同参与；
+- `quiet`：没有值得升级的行情；
+- `conflicting`：数据完整但证据冲突；
+- `insufficient_data`：关键数据不足。
 
 Observer 还会输出概率、冲突证据、缺失数据和研究优先级。
 

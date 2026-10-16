@@ -60,7 +60,8 @@ def generate_remote_report(
                     "headline, state, confidence, supporting_evidence_ids, "
                     "contradicting_evidence_ids, missing_evidence_ids, "
                     "invalidation_condition. Evidence IDs must be selected exactly "
-                    "from the supplied evidence_catalog; do not add new evidence."
+                    "from the supplied evidence_catalog; do not add new evidence. "
+                    "The state must exactly match jev_judgment.selected_value."
                 ),
             },
             {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
@@ -82,6 +83,12 @@ def generate_remote_report(
             if not isinstance(model_fields, dict):
                 raise ValueError("Model response must be a JSON object.")
             result = AnalystResult.model_validate(model_fields)
+            if judgment is not None and result.state != judgment.selected_value:
+                raise ValueError(
+                    "Model state {} disagrees with Observer state {}".format(
+                        result.state, judgment.selected_value
+                    )
+                )
             supporting = resolve_evidence_ids(result.supporting_evidence_ids, "supporting", catalog)
             contradicting = resolve_evidence_ids(
                 result.contradicting_evidence_ids, "contradicting", catalog

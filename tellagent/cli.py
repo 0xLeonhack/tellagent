@@ -9,7 +9,7 @@ from .ledger import JsonlLedger
 from .factors import JsonlFactorStore
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
-from .observer import RemoteJevObserver, RuleBasedJevObserver
+from .observer import RemoteJevObserver, RuleBasedObserver
 from .renderer import render_reports
 from .research import ResearchOutcome, outcome_summary, run_research
 from .review import OutcomeReviewer
@@ -38,7 +38,7 @@ def research(
             raise ValueError("--analyst must be remote or none.")
         if provider not in {"rule", "jev"}:
             raise ValueError("--provider must be rule or jev.")
-        observer = RuleBasedJevObserver() if provider == "rule" else RemoteJevObserver.from_env()
+        observer = RuleBasedObserver() if provider == "rule" else RemoteJevObserver.from_env()
         contextual_generator = None
         report_generator = None
         if analyst == "remote":

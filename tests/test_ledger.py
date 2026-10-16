@@ -28,7 +28,11 @@ def test_gate_uses_adjacent_non_memory_judgment(tmp_path):
     memory = JsonlMemory(tmp_path / "memory.jsonl")
     first = MarketSnapshot(
         as_of="2026-10-08T00:00:00Z", sources=["test"],
-        assets=[AssetSnapshot(symbol="BTC", price_change_1h=0.001)],
+        assets=[AssetSnapshot(
+            symbol="BTC", price_change_1h=0.001, price_change_6h=0.001,
+            spot_volume_change_1h=0.0, funding_rate=0.0,
+            open_interest_change_interval=0.0,
+        )],
     )
     second = MarketSnapshot(
         as_of="2026-10-08T00:05:00Z", sources=["test"],
@@ -41,5 +45,5 @@ def test_gate_uses_adjacent_non_memory_judgment(tmp_path):
     assert first_outcome.investigated is False
     assert memory.records() == []
     second_outcome = process_snapshot(second, memory, ledger=ledger)[0]
-    assert second_outcome.judgment.selected_value == "spot_confirmed"
+    assert second_outcome.judgment.selected_value == "spot_confirmed_up"
     assert second_outcome.investigated is True

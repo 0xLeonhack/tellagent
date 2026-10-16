@@ -2,17 +2,33 @@ import json
 import os
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Dict, List, Protocol, Tuple
+from typing import Dict, List, Protocol
 
 import httpx
 
-from .metrics import analyze_asset, classify_state, oi_signal
+from .assessment import assess_market
+from .metrics import REPORT_TEXT, analyze_asset
 from .schemas import AssetSnapshot, ContinuousJudgment, FeatureBaseline, MarketStateFrame, MarketSnapshot
 
 
-class JudgmentProvider(Protocol):
-    """Replaceable structured market judgment provider."""
+REGIMES = (
+    "quiet",
+    "spot_confirmed_up",
+    "spot_confirmed_down",
+    "leverage_expansion_up",
+    "leverage_expansion_down",
+    "position_unwind_up",
+    "position_unwind_down",
+    "broad_participation_up",
+    "broad_participation_down",
+    "unconfirmed_move_up",
+    "unconfirmed_move_down",
+    "conflicting",
+    "insufficient_data",
+)
 
+
+class JudgmentProvider(Protocol):
     provider: str
     model_version: str
 
@@ -24,7 +40,6 @@ def build_state_frame(
     asset: AssetSnapshot,
     baseline_state: Dict[str, FeatureBaseline] | None = None,
 ) -> MarketStateFrame:
-    """Convert a snapshot into the compact state passed to an Observer."""
     analysis = analyze_asset(asset)
     frame_id = sha256(
         "{}:{}:{}".format(asset.symbol, snapshot.as_of, asset.model_dump_json()).encode()
@@ -46,54 +61,48 @@ def build_state_frame(
         quality_summary={
             "source_count": str(len(snapshot.sources)),
             "missing_count": str(len(analysis.evidence.missing)),
-            "status": "degraded" if analysis.evidence.missing else "ok",
+            "status": analysis.assessment.data_quality,
         },
         baseline_state=baseline_state or {},
         strategy_thresholds=asset.strategy_thresholds,
+        assessment=analysis.assessment,
     )
 
 
-class RuleBasedJevObserver:
-    """Local Jev-compatible Observer.
+class RuleBasedObserver:
+    """Deterministic default Observer; Jev is an optional provider."""
 
-    It emits the structured judgment contract planned for Jev, using
-    deterministic rules until an external Jev provider is available.
-    """
-
-    provider = "rule-based-jev"
-    model_version = "rules-v1"
+    provider = "rule-based-observer"
+    model_version = "market-state-v2"
 
     def judge(self, frame: MarketStateFrame) -> ContinuousJudgment:
         started = datetime.now(timezone.utc)
-        price = frame.price_state.get("change_1h")
-        volume = frame.spot_state.get("volume_change_1h")
-        oi_1h = frame.leverage_state.get("open_interest_change_1h")
-        oi_interval = frame.leverage_state.get("open_interest_change_interval")
-        funding = frame.leverage_state.get("funding_rate")
-        state, probabilities = _state_probabilities(
-            price, volume, oi_1h, oi_interval, frame.strategy_thresholds
-        )
-        conflicts = _conflict_roles(state, volume, funding)
-        priority = _priority(state, frame, conflicts)
-        supporting = ["price_state", "spot_state", "leverage_state"] if state != "uncertain" else []
+        assessment = frame.assessment or assess_market(_asset_from_frame(frame))
+        scores = _heuristic_scores(frame, assessment)
+        conflicts = _conflict_roles(assessment)
         now = datetime.now(timezone.utc)
         return ContinuousJudgment(
             frame_id=frame.frame_id,
             asset=frame.asset,
             as_of=frame.as_of,
-            selected_value=state,
-            probabilities=probabilities,
-            confidence=round(max(probabilities.values()), 2),
-            supporting_roles=supporting,
+            selected_value=assessment.regime,
+            probabilities=scores,
+            confidence=max(scores.values()),
+            score_kind="heuristic",
+            supporting_roles=_available_roles(frame),
             contradicting_roles=conflicts,
             missing_roles=list(frame.missing_inputs),
-            research_priority=priority,
-            invalidation_conditions=_invalidation_conditions(state),
+            research_priority=_priority(assessment),
+            invalidation_conditions=[REPORT_TEXT[assessment.regime][1]],
             provider=self.provider,
             model_version=self.model_version,
             latency_ms=max(0, int((now - started).total_seconds() * 1000)),
-            created_at=now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            created_at=_format_time(now),
         )
+
+
+# Backward-compatible import for existing integrations and historical notebooks.
+RuleBasedJevObserver = RuleBasedObserver
 
 
 class RemoteJevObserver:
@@ -125,21 +134,16 @@ class RemoteJevObserver:
             "questions": {
                 "market_state": {
                     "type": "choice",
-                    "instructions": "Which market state best matches the supplied BTC or ETH frame?",
-                    "criteria": {
-                        "leverage_led": "Price move is primarily driven by derivatives leverage while spot confirmation is weak.",
-                        "spot_confirmed": "Price move is confirmed by spot volume without abnormal leverage expansion.",
-                        "deleveraging": "Price weakness is accompanied by a material reduction in open interest.",
-                        "uncertain": "Evidence is incomplete, weak, or conflicting, so no dominant state is justified.",
-                    },
+                    "instructions": "Which market regime best matches this BTC or ETH frame?",
+                    "criteria": REGIME_CRITERIA,
                 },
                 "research_priority": {
                     "type": "choice",
                     "instructions": "How urgently should a stronger market analyst review this frame?",
                     "criteria": {
-                        "silent": "No meaningful anomaly or research value.",
+                        "silent": "No meaningful activity or research value.",
                         "watch": "Monitor for confirmation but do not escalate yet.",
-                        "significant": "Meaningful anomaly or conflict merits analysis now.",
+                        "significant": "Meaningful activity or conflict merits analysis now.",
                         "urgent": "Extreme or sharply conflicting evidence requires immediate analysis.",
                     },
                 },
@@ -147,10 +151,10 @@ class RemoteJevObserver:
                     "type": "choice",
                     "instructions": "Which contradictory evidence role is most important?",
                     "criteria": {
-                        "aligned": "The price, spot, and leverage evidence is broadly aligned.",
-                        "spot_confirmation": "Spot activity contradicts a leverage-led interpretation.",
-                        "funding_extreme": "Funding conditions contradict a spot-confirmed interpretation.",
-                        "mixed": "Both spot and leverage evidence materially conflict.",
+                        "aligned": "Price, spot, and leverage evidence is broadly aligned.",
+                        "spot_confirmation": "Spot activity contradicts the leverage interpretation.",
+                        "funding_extreme": "Funding crowding contradicts the primary interpretation.",
+                        "mixed": "Multiple evidence roles materially conflict.",
                     },
                 },
             },
@@ -164,15 +168,11 @@ class RemoteJevObserver:
                 json=payload,
             )
             response.raise_for_status()
-            raw = response.json()
-            answers = raw["answers"]
+            answers = response.json()["answers"]
             market_answer = answers["market_state"]
-            priority_answer = answers["research_priority"]
-            conflict_answer = answers["signal_conflict"]
             selected_value = market_answer["choice"]
             probabilities = market_answer["probabilities"]
-            priority = priority_answer["choice"]
-            conflict = conflict_answer["choice"]
+            conflict = answers["signal_conflict"]["choice"]
             now = datetime.now(timezone.utc)
             judgment = ContinuousJudgment(
                 frame_id=frame.frame_id,
@@ -181,15 +181,16 @@ class RemoteJevObserver:
                 provider=self.provider,
                 model_version=self.model,
                 latency_ms=max(0, int((now - started).total_seconds() * 1000)),
-                created_at=now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                created_at=_format_time(now),
                 selected_value=selected_value,
                 probabilities=probabilities,
                 confidence=market_answer["confidence"],
+                score_kind="probability",
                 supporting_roles=_available_roles(frame),
                 contradicting_roles=_conflict_answer_roles(conflict),
                 missing_roles=list(frame.missing_inputs),
-                research_priority=priority,
-                invalidation_conditions=_invalidation_conditions(selected_value),
+                research_priority=answers["research_priority"]["choice"],
+                invalidation_conditions=[REPORT_TEXT[selected_value][1]],
             )
             _validate_judgment_probabilities(judgment)
             return judgment
@@ -200,17 +201,107 @@ class RemoteJevObserver:
                 client.close()
 
 
-def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
-    required = {"leverage_led", "spot_confirmed", "deleveraging", "uncertain"}
-    if set(judgment.probabilities) != required:
-        raise ValueError("Jev market_state probabilities must contain exactly the four supported states")
-    if any(value < 0 or value > 1 for value in judgment.probabilities.values()):
-        raise ValueError("Jev probabilities must be between 0 and 1")
-    total = sum(judgment.probabilities.values())
-    if abs(total - 1.0) > 0.01:
-        raise ValueError("Jev probabilities must sum to 1.0, got {:.4f}".format(total))
-    if judgment.selected_value not in judgment.probabilities:
-        raise ValueError("Jev selected_value is absent from probabilities")
+REGIME_CRITERIA = {
+    "quiet": "Price, spot, and leverage activity is quiet.",
+    "spot_confirmed_up": "Price rises with strong spot confirmation and stable leverage.",
+    "spot_confirmed_down": "Price falls with strong spot confirmation and stable leverage.",
+    "leverage_expansion_up": "Price rises with expanding leverage and weak spot confirmation.",
+    "leverage_expansion_down": "Price falls with expanding leverage and weak spot confirmation.",
+    "position_unwind_up": "Price rises while open interest contracts.",
+    "position_unwind_down": "Price falls while open interest contracts.",
+    "broad_participation_up": "Price rises with both strong spot activity and leverage expansion.",
+    "broad_participation_down": "Price falls with both strong spot activity and leverage expansion.",
+    "unconfirmed_move_up": "Price rises, but neither spot activity nor leverage confirms the move.",
+    "unconfirmed_move_down": "Price falls, but neither spot activity nor leverage confirms the move.",
+    "conflicting": "Complete evidence is active but does not support one coherent driver.",
+    "insufficient_data": "Critical data is missing, so no regime is justified.",
+}
+
+
+def _heuristic_scores(frame: MarketStateFrame, assessment) -> Dict[str, float]:
+    scores = {regime: 0.0 for regime in REGIMES}
+    selected = assessment.regime
+    price = abs(frame.price_state.get("change_1h") or 0.0)
+    oi, oi_threshold = _frame_oi_signal(frame)
+    volume = max(frame.spot_state.get("volume_change_1h") or 0.0, 0.0)
+    price_threshold = frame.strategy_thresholds.get("price_change_1h", 0.02)
+    volume_threshold = frame.strategy_thresholds.get("spot_volume_change_1h", 0.05)
+    strength = 0.45
+    strength += 0.1 * min(price / max(price_threshold, 1e-9), 2) / 2
+    if oi is not None:
+        strength += 0.1 * min(abs(oi) / max(oi_threshold, 1e-9), 2) / 2
+    strength += 0.1 * min(volume / max(volume_threshold, 1e-9), 2) / 2
+    if selected == "quiet":
+        strength = 0.75
+    elif selected == "insufficient_data":
+        strength = 0.65
+    elif selected == "conflicting":
+        strength = max(strength, 0.65)
+    selected_score = round(min(strength, 0.9), 4)
+    remainder = (1 - selected_score) / (len(REGIMES) - 1)
+    for regime in REGIMES:
+        scores[regime] = selected_score if regime == selected else round(remainder, 4)
+    correction = round(1 - sum(scores.values()), 4)
+    scores[selected] = round(scores[selected] + correction, 4)
+    return scores
+
+
+def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:
+    return AssetSnapshot(
+        symbol=frame.asset,
+        price_change_1h=frame.price_state.get("change_1h"),
+        price_change_6h=frame.price_state.get("change_6h"),
+        spot_volume_change_1h=frame.spot_state.get("volume_change_1h"),
+        funding_rate=frame.leverage_state.get("funding_rate"),
+        open_interest=frame.leverage_state.get("open_interest"),
+        open_interest_change_interval=frame.leverage_state.get("open_interest_change_interval"),
+        open_interest_change_1h=frame.leverage_state.get("open_interest_change_1h"),
+        strategy_thresholds=frame.strategy_thresholds,
+    )
+
+
+def _frame_oi_signal(frame: MarketStateFrame) -> tuple[float | None, float]:
+    one_hour = frame.leverage_state.get("open_interest_change_1h")
+    if one_hour is not None:
+        return one_hour, 0.08
+    return (
+        frame.leverage_state.get("open_interest_change_interval"),
+        frame.strategy_thresholds.get("oi_interval", 0.015),
+    )
+
+
+def _priority(assessment) -> str:
+    if assessment.regime == "quiet":
+        return "silent"
+    if assessment.regime == "insufficient_data":
+        return "watch" if assessment.price_strength == "shock" else "silent"
+    if assessment.regime == "conflicting":
+        return "significant" if assessment.price_strength == "shock" else "watch"
+    if assessment.regime == "leverage_expansion_down":
+        return "significant"
+    if assessment.regime.startswith("leverage_expansion"):
+        return "significant" if (
+            "spot_leverage_divergence" in assessment.risk_flags
+            or assessment.funding_state != "neutral"
+        ) else "watch"
+    if assessment.regime.startswith("position_unwind"):
+        return "significant" if assessment.price_strength == "shock" else "watch"
+    if assessment.regime == "broad_participation_down":
+        return "significant"
+    if assessment.regime.startswith("unconfirmed_move"):
+        return "significant" if assessment.price_strength == "shock" else "watch"
+    return "watch"
+
+
+def _conflict_roles(assessment) -> List[str]:
+    roles = []
+    if "spot_leverage_divergence" in assessment.risk_flags:
+        roles.append("spot_confirmation")
+    if assessment.funding_state in {"long_crowded", "short_crowded"}:
+        roles.append("funding_extreme")
+    if assessment.alignment == "conflicting":
+        roles.append("signal_conflict")
+    return roles
 
 
 def _available_roles(frame: MarketStateFrame) -> List[str]:
@@ -227,61 +318,21 @@ def _conflict_answer_roles(value: str) -> List[str]:
         "aligned": [],
         "spot_confirmation": ["spot_confirmation"],
         "funding_extreme": ["funding_extreme"],
-        "mixed": ["spot_confirmation", "funding_extreme"],
+        "mixed": ["spot_confirmation", "funding_extreme", "signal_conflict"],
     }[value]
 
 
-_PROBABILITIES: Dict[str, Dict[str, float]] = {
-    "leverage_led": {"leverage_led": 0.82, "spot_confirmed": 0.08, "deleveraging": 0.02, "uncertain": 0.08},
-    "spot_confirmed": {"leverage_led": 0.08, "spot_confirmed": 0.78, "deleveraging": 0.02, "uncertain": 0.12},
-    "deleveraging": {"leverage_led": 0.03, "spot_confirmed": 0.04, "deleveraging": 0.82, "uncertain": 0.11},
-    "uncertain": {"leverage_led": 0.12, "spot_confirmed": 0.18, "deleveraging": 0.08, "uncertain": 0.62},
-}
+def _validate_judgment_probabilities(judgment: ContinuousJudgment) -> None:
+    if set(judgment.probabilities) != set(REGIMES):
+        raise ValueError("Jev market_state probabilities must contain exactly the v2 regimes")
+    if any(value < 0 or value > 1 for value in judgment.probabilities.values()):
+        raise ValueError("Jev probabilities must be between 0 and 1")
+    total = sum(judgment.probabilities.values())
+    if abs(total - 1.0) > 0.01:
+        raise ValueError("Jev probabilities must sum to 1.0, got {:.4f}".format(total))
+    if judgment.selected_value not in judgment.probabilities:
+        raise ValueError("Jev selected_value is absent from probabilities")
 
 
-def _state_probabilities(
-    price: float | None,
-    volume: float | None,
-    oi_1h: float | None,
-    oi_interval: float | None,
-    thresholds: Dict[str, float] | None = None,
-) -> Tuple[str, Dict[str, float]]:
-    thresholds = thresholds or {}
-    oi, oi_threshold = oi_signal(
-        oi_1h, oi_interval, thresholds.get("oi_interval", 0.015)
-    )
-    state = classify_state(
-        price,
-        volume,
-        oi,
-        oi_threshold,
-        thresholds.get("price_change_1h", 0.02),
-        thresholds.get("spot_volume_change_1h", 0.05),
-    )
-    return state, _PROBABILITIES[state]
-
-
-def _conflict_roles(state: str, volume: float | None, funding: float | None) -> List[str]:
-    roles: List[str] = []
-    if state == "leverage_led" and volume is not None and volume > 0:
-        roles.append("spot_confirmation")
-    if state == "spot_confirmed" and funding is not None and funding > 0.0002:
-        roles.append("funding_extreme")
-    return roles
-
-
-def _priority(state: str, frame: MarketStateFrame, conflicts: List[str]) -> str:
-    if state == "uncertain":
-        return "watch" if frame.missing_inputs else "silent"
-    if conflicts and len(frame.missing_inputs) <= 1:
-        return "significant"
-    return "watch"
-
-
-def _invalidation_conditions(state: str) -> List[str]:
-    return {
-        "leverage_led": ["spot volume expands while open interest falls"],
-        "spot_confirmed": ["spot volume falls while open interest expands"],
-        "deleveraging": ["open interest recovers and price reverses higher"],
-        "uncertain": ["obtain a complete price, spot, and derivatives frame"],
-    }[state]
+def _format_time(value: datetime) -> str:
+    return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")

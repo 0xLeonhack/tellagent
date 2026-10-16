@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from tellagent.metrics import analyze_asset
-from tellagent.observer import RemoteJevObserver, RuleBasedJevObserver, build_state_frame
+from tellagent.observer import REGIMES, RemoteJevObserver, RuleBasedJevObserver, build_state_frame
 from tellagent.schemas import AssetSnapshot, MarketSnapshot
 from helpers import market_snapshot
 
@@ -33,8 +33,8 @@ def test_observer_emits_structured_leverage_judgment():
     snapshot = market_snapshot()
     frame = build_state_frame(snapshot, snapshot.assets[1])
     judgment = RuleBasedJevObserver().judge(frame)
-    assert judgment.provider == "rule-based-jev"
-    assert judgment.selected_value == "leverage_led"
+    assert judgment.provider == "rule-based-observer"
+    assert judgment.selected_value == "leverage_expansion_up"
     assert sum(judgment.probabilities.values()) == 1.0
     assert judgment.research_priority in {"watch", "significant", "urgent"}
 
@@ -44,9 +44,19 @@ def test_observer_marks_missing_oi_as_watch():
     asset = snapshot.assets[0].model_copy(update={"open_interest_change_1h": None})
     frame = build_state_frame(snapshot, asset)
     judgment = RuleBasedJevObserver().judge(frame)
-    assert judgment.selected_value == "uncertain"
+    assert judgment.selected_value == "insufficient_data"
     assert judgment.research_priority == "watch"
     assert judgment.missing_roles
+
+
+def test_rule_observer_can_replay_v1_frame_without_assessment():
+    snapshot = market_snapshot()
+    frame = build_state_frame(snapshot, snapshot.assets[1]).model_copy(update={
+        "assessment": None,
+        "schema_version": "tellagent.market-state.v1",
+    })
+    judgment = RuleBasedJevObserver().judge(frame)
+    assert judgment.selected_value == "leverage_expansion_up"
 
 
 def test_remote_jev_validates_probability_contract():
@@ -56,8 +66,8 @@ def test_remote_jev_validates_probability_contract():
         assert body["questions"]["market_state"]["type"] == "choice"
         return httpx.Response(200, json={"answers": {
             "market_state": {
-                "type": "choice", "choice": "leverage_led", "confidence": 0.8,
-                "probabilities": {"leverage_led": 0.8, "spot_confirmed": 0.1, "deleveraging": 0.02, "uncertain": 0.08},
+                "type": "choice", "choice": "leverage_expansion_up", "confidence": 0.8,
+                "probabilities": _valid_probabilities("leverage_expansion_up", 0.8),
             },
             "research_priority": {"type": "choice", "choice": "significant", "confidence": 0.9, "probabilities": {}},
             "signal_conflict": {"type": "choice", "choice": "spot_confirmation", "confidence": 0.7, "probabilities": {}},
@@ -76,8 +86,8 @@ def test_remote_jev_rejects_bad_probability_sum():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"answers": {
             "market_state": {
-                "type": "choice", "choice": "uncertain", "confidence": 0.4,
-                "probabilities": {"leverage_led": 0.1, "spot_confirmed": 0.1, "deleveraging": 0.1, "uncertain": 0.1},
+                "type": "choice", "choice": "insufficient_data", "confidence": 0.4,
+                "probabilities": {regime: 0.01 for regime in REGIMES},
             },
             "research_priority": {"type": "choice", "choice": "watch", "confidence": 0.6, "probabilities": {}},
             "signal_conflict": {"type": "choice", "choice": "aligned", "confidence": 0.8, "probabilities": {}},
@@ -89,3 +99,11 @@ def test_remote_jev_rejects_bad_probability_sum():
         RemoteJevObserver("https://jev.test/judge", "key", "jev-test").judge(
             frame, client=httpx.Client(transport=httpx.MockTransport(handler))
         )
+
+
+def _valid_probabilities(selected: str, probability: float):
+    remainder = (1 - probability) / (len(REGIMES) - 1)
+    return {
+        regime: probability if regime == selected else remainder
+        for regime in REGIMES
+    }

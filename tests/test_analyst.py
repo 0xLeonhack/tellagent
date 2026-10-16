@@ -24,13 +24,13 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
         request_body = json.loads(request.content)
         user_facts = json.loads(request_body["messages"][1]["content"])
         assert user_facts["related_memory"] == "prior context"
-        assert user_facts["jev_judgment"]["selected_value"] == "leverage_led"
+        assert user_facts["jev_judgment"]["selected_value"] == "leverage_expansion_up"
         body = {
             "choices": [{
                 "message": {
                     "content": json.dumps({
                         "headline": "模型整理的研究判断",
-                        "state": "leverage_led",
+                        "state": "leverage_expansion_up",
                         "confidence": 0.7,
                         "supporting_evidence_ids": ids["supporting"],
                         "contradicting_evidence_ids": ids["contradicting"],
@@ -54,7 +54,7 @@ def test_remote_analyst_validates_and_trusts_snapshot_metadata():
     assert report.asset == "BTC"
     assert report.data_time == snapshot.as_of
     assert report.sources == snapshot.sources
-    assert report.state == "leverage_led"
+    assert report.state == "leverage_expansion_up"
     assert report.supporting_evidence == evidence.supporting
     assert report.supporting_evidence_ids == ids["supporting"]
 
@@ -63,7 +63,7 @@ def test_remote_analyst_rejects_invented_evidence():
     def handler(request: httpx.Request) -> httpx.Response:
         content = {
             "headline": "未经输入支持的判断",
-            "state": "leverage_led",
+            "state": "leverage_expansion_up",
             "confidence": 0.7,
             "supporting_evidence_ids": ["BTC:supporting:invented"],
             "contradicting_evidence_ids": ["BTC:contradicting:invented"],

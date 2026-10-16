@@ -35,14 +35,17 @@ Gate（状态跃迁 / 概率跳变 / 优先级升级 / 冲突变化）
 Rich 报告 · JSONL 账本 · 自动复盘 · 因子假设
 ```
 
-Observer 输出四种状态：
+Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Funding、证据关系和数据质量，再派生 Regime：
 
 | 状态 | 含义 |
 | --- | --- |
-| `leverage_led` | 价格变化主要由衍生品杠杆推动，现货确认不足 |
-| `spot_confirmed` | 价格变化得到现货成交确认，杠杆扩张有限 |
-| `deleveraging` | 价格走弱并伴随 Open Interest 收缩 |
-| `uncertain` | 数据缺失、信号弱或证据冲突，不能形成可靠判断 |
+| `spot_confirmed_up/down` | 上涨或下跌得到现货成交确认，杠杆变化有限 |
+| `leverage_expansion_up/down` | 上涨或下跌伴随杠杆扩张，现货确认不足 |
+| `position_unwind_up/down` | 价格变化伴随仓位收缩 |
+| `broad_participation_up/down` | 现货活跃与杠杆扩张共同参与价格变化 |
+| `quiet` | 价格、现货和杠杆活动均处于平静区间 |
+| `conflicting` | 数据完整，但价格、现货与杠杆证据无法形成一致解释 |
+| `insufficient_data` | 关键数据缺失，不能形成可靠判断 |
 
 稳定状态不会重复调用强模型。只有状态、概率、研究优先级或冲突关系变化时，Gate 才重新放行。
 

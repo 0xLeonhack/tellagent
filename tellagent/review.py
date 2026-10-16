@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .ledger import JsonlLedger
-from .metrics import oi_signal
+from .assessment import assess_market
 from .schemas import (
     AssetSnapshot,
     ContinuousJudgment,
@@ -214,13 +214,34 @@ def _insufficient_review(
 
 
 def _invalidation_triggered(state: str, current: AssetSnapshot) -> bool:
-    oi, threshold = oi_signal(current.open_interest_change_1h, current.open_interest_change_interval)
-    if state == "leverage_led":
-        return bool(current.spot_volume_change_1h is not None and current.spot_volume_change_1h > 0.05 and oi is not None and oi < 0)
-    if state == "spot_confirmed":
-        return bool(current.spot_volume_change_1h is not None and current.spot_volume_change_1h <= 0 and oi is not None and oi > threshold)
-    if state == "deleveraging":
-        return bool(current.price_change_1h is not None and current.price_change_1h > 0.02 and oi is not None and oi > 0)
+    state = {
+        "leverage_led": "leverage_expansion_up",
+        "spot_confirmed": "spot_confirmed_up",
+        "deleveraging": "position_unwind_down",
+    }.get(state, state)
+    assessment = assess_market(current)
+    if state.startswith("leverage_expansion"):
+        return assessment.leverage_change != "expanding" or assessment.spot_confirmation == "strong"
+    if state.startswith("spot_confirmed"):
+        return assessment.spot_confirmation != "strong" or assessment.leverage_change != "stable"
+    if state.startswith("position_unwind"):
+        return assessment.leverage_change != "contracting"
+    if state.startswith("broad_participation"):
+        return not (
+            assessment.spot_confirmation == "strong"
+            and assessment.leverage_change == "expanding"
+        )
+    if state.startswith("unconfirmed_move"):
+        return not (
+            assessment.leverage_change == "stable"
+            and assessment.spot_confirmation != "strong"
+        )
+    if state == "quiet":
+        return assessment.regime != "quiet"
+    if state == "conflicting":
+        return assessment.alignment != "conflicting"
+    if state == "insufficient_data":
+        return assessment.data_quality != "insufficient"
     return False
 
 
