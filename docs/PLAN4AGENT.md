@@ -125,6 +125,8 @@ tellagent/
 
 ### 阶段 2：本地 Agent Loop
 
+运行时骨架已实现为 `agent_loop.py`，包含最大步数、ToolRegistry 执行和 AgentTrace。
+
 实现有限步循环：
 
 ```text
@@ -234,4 +236,3 @@ agent mode
 ```
 
 达到这个闭环，项目才从“带模型节点的工作流”升级为“受约束、可回放、可评估的研究 Agent”。
-
