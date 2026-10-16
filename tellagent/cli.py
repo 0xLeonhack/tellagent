@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -7,23 +8,39 @@ from .config import load_project_env
 
 load_project_env()
 
+from .agent_policy import RuleBasedAgentProvider
+from .agent_provider import RemoteAgentConfig, RemoteAgentProvider
+from .agent_research import AgentRequest, AgentResearchRunner
+from .agent_trace import JsonlAgentTraceStore
 from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
-from .ledger import JsonlLedger
 from .factors import JsonlFactorStore
+from .ledger import JsonlLedger
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedObserver
-from .renderer import render_reports
-from .research import ResearchOutcome, outcome_summary, run_research
+from .renderer import render_agent_stats, render_reports
+from .research import replay_recorded_frames, run_research
 from .review import OutcomeReviewer
 
 app = typer.Typer(add_completion=False, help="BTC/ETH continuous market research")
 
 
+@dataclass(frozen=True)
+class _Pipeline:
+    """Shared ledger, observer and loader wiring for both run modes."""
+
+    observer: object
+    memory: JsonlMemory
+    ledger: JsonlLedger
+    reviewer: OutcomeReviewer
+    factor_store: JsonlFactorStore
+    live_loader: RollingLiveLoader
+
+
 @app.callback()
 def main() -> None:
-    """Run the continuous Jev-gated research pipeline."""
+    """Run the continuous gated research pipeline."""
 
 
 @app.command()
@@ -36,52 +53,227 @@ def research(
     analyst: str = typer.Option("remote", "--analyst", help="Strong analyst: remote or none."),
     provider: str = typer.Option("rule", "--provider", help="Observer provider: rule or jev."),
 ) -> None:
-    """Collect real data, let Jev gate it, then call the strong analyst."""
+    """Workflow mode: collect real data, gate it, then call the strong analyst."""
     try:
-        if analyst not in {"none", "remote"}:
-            raise ValueError("--analyst must be remote or none.")
-        if provider not in {"rule", "jev"}:
-            raise ValueError("--provider must be rule or jev.")
-        observer = RuleBasedObserver() if provider == "rule" else RemoteJevObserver.from_env()
-        contextual_generator = None
-        report_generator = None
-        if analyst == "remote":
-            config = RemoteAnalystConfig.from_env()
-            contextual_generator = lambda current, item, judgment, context: generate_remote_report(
-                current, item, config, memory_context=context, judgment=judgment
-            )
-        else:
-            report_generator = build_deterministic_report
-        memory = JsonlMemory(memory_path)
-        ledger = JsonlLedger(memory_path.parent)
-        reviewer = OutcomeReviewer(memory_path.parent)
-        factor_store = JsonlFactorStore(memory_path.parent)
-        previous_open_interest = {}
-        for frame_record in ledger.frames():
-            value = frame_record.asset_snapshot.open_interest
-            if value is not None:
-                previous_open_interest[frame_record.asset_snapshot.symbol] = value
-        live_loader = RollingLiveLoader(
-            timeout=timeout,
-            previous_open_interest=previous_open_interest,
-        )
-
-        def on_cycle(outcomes: list[ResearchOutcome]) -> None:
-            render_reports(outcomes)
-
+        _validate(analyst=analyst, provider=provider)
+        pipeline = _build_pipeline(memory_path, timeout, provider)
+        contextual_generator, report_generator = _workflow_generators(analyst)
         run_research(
-            live_loader,
-            memory,
+            pipeline.live_loader,
+            pipeline.memory,
             report_generator=report_generator,
             asset=asset,
             cycles=cycles,
             interval=interval,
             contextual_report_generator=contextual_generator,
-            observer=observer,
-            ledger=ledger,
-            reviewer=reviewer,
-            factor_store=factor_store,
-            on_cycle=on_cycle,
+            observer=pipeline.observer,
+            ledger=pipeline.ledger,
+            reviewer=pipeline.reviewer,
+            factor_store=pipeline.factor_store,
+            on_cycle=render_reports,
         )
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command()
+def agent(
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only research one asset, e.g. ETH."),
+    cycles: int = typer.Option(0, "--cycles", min=0, help="Iterations; 0 runs until interrupted."),
+    interval: float = typer.Option(300.0, "--interval", min=0.0, help="Seconds between iterations."),
+    timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Public API timeout in seconds."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+    analyst: str = typer.Option("remote", "--analyst", help="Strong analyst: remote or none."),
+    provider: str = typer.Option("rule", "--provider", help="Observer provider: rule or jev."),
+    agent_provider: str = typer.Option(
+        "rule", "--agent-provider", help="Agent decision provider: rule or remote."
+    ),
+    agent_steps: int = typer.Option(
+        3, "--agent-steps", min=1, max=10, help="Maximum Agent steps per escalated frame."
+    ),
+    always_investigate: bool = typer.Option(
+        False,
+        "--always-investigate",
+        help="Bypass the Gate cooldown so every frame reaches the Agent (evaluation switch).",
+    ),
+) -> None:
+    """Agent mode: Observer → Gate → Agent actions → tools → report → trace."""
+    try:
+        _validate(analyst=analyst, provider=provider, agent_provider=agent_provider)
+        pipeline = _build_pipeline(memory_path, timeout, provider)
+        runner = _build_agent_runner(
+            memory_path, analyst, agent_provider, agent_steps, pipeline.factor_store
+        )
+        run_research(
+            pipeline.live_loader,
+            pipeline.memory,
+            asset=asset,
+            cycles=cycles,
+            interval=interval,
+            observer=pipeline.observer,
+            ledger=pipeline.ledger,
+            reviewer=pipeline.reviewer,
+            factor_store=pipeline.factor_store,
+            on_cycle=render_reports,
+            agent_runner=runner,
+            always_investigate=always_investigate,
+        )
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command()
+def replay(
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only replay one asset, e.g. ETH."),
+    frames: int = typer.Option(
+        1, "--frames", min=1, help="How many of the most recent recorded frames to replay."
+    ),
+    frame_id: Optional[str] = typer.Option(
+        None, "--frame-id", help="Replay one exact recorded frame instead of the newest ones."
+    ),
+    timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Public API timeout in seconds."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+    analyst: str = typer.Option("remote", "--analyst", help="Strong analyst: remote or none."),
+    provider: str = typer.Option("rule", "--provider", help="Observer provider: rule or jev."),
+    agent_provider: str = typer.Option(
+        "rule", "--agent-provider", help="Agent decision provider: rule or remote."
+    ),
+    agent_steps: int = typer.Option(
+        3, "--agent-steps", min=1, max=10, help="Maximum Agent steps per frame."
+    ),
+) -> None:
+    """Replay recorded frames through the Agent without touching the ledger."""
+    try:
+        _validate(analyst=analyst, provider=provider, agent_provider=agent_provider)
+        pipeline = _build_pipeline(memory_path, timeout, provider)
+        runner = _build_agent_runner(
+            memory_path, analyst, agent_provider, agent_steps, pipeline.factor_store
+        )
+        outcomes = replay_recorded_frames(
+            pipeline.ledger,
+            pipeline.memory,
+            runner,
+            observer=pipeline.observer,
+            asset=asset,
+            limit=frames,
+            frame_id=frame_id,
+        )
+        render_reports(outcomes)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command()
+def agent_stats(
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only summarize one asset."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+) -> None:
+    """Summarize recorded Agent runs from the replay ledger."""
+    render_agent_stats(JsonlAgentTraceStore(memory_path.parent).stats(asset))
+
+
+def _validate(
+    analyst: str,
+    provider: str,
+    agent_provider: Optional[str] = None,
+) -> None:
+    if analyst not in {"none", "remote"}:
+        raise ValueError("--analyst must be remote or none.")
+    if provider not in {"rule", "jev"}:
+        raise ValueError("--provider must be rule or jev.")
+    if agent_provider is not None and agent_provider not in {"rule", "remote"}:
+        raise ValueError("--agent-provider must be rule or remote.")
+
+
+def _build_pipeline(memory_path: Path, timeout: float, provider: str) -> _Pipeline:
+    observer = RuleBasedObserver() if provider == "rule" else RemoteJevObserver.from_env()
+    memory = JsonlMemory(memory_path)
+    ledger = JsonlLedger(memory_path.parent)
+    previous_open_interest = {}
+    for frame_record in ledger.frames():
+        value = frame_record.asset_snapshot.open_interest
+        if value is not None:
+            previous_open_interest[frame_record.asset_snapshot.symbol] = value
+    return _Pipeline(
+        observer=observer,
+        memory=memory,
+        ledger=ledger,
+        reviewer=OutcomeReviewer(memory_path.parent),
+        factor_store=JsonlFactorStore(memory_path.parent),
+        live_loader=RollingLiveLoader(
+            timeout=timeout,
+            previous_open_interest=previous_open_interest,
+        ),
+    )
+
+
+def _workflow_generators(analyst: str):
+    if analyst == "none":
+        return None, build_deterministic_report
+    config = _analyst_config(analyst)
+    return (
+        lambda current, item, judgment, context: generate_remote_report(
+            current, item, config, memory_context=context, judgment=judgment
+        ),
+        None,
+    )
+
+
+def _analyst_config(analyst: str) -> Optional[RemoteAnalystConfig]:
+    if analyst == "none":
+        return None
+    try:
+        return RemoteAnalystConfig.from_env()
+    except ValueError as exc:
+        raise ValueError(
+            "{} 未配置强模型时请使用 --analyst none（确定性报告）。".format(exc)
+        ) from exc
+
+
+def _agent_report(request: AgentRequest, config: Optional[RemoteAnalystConfig]):
+    if config is None:
+        return build_deterministic_report(request.snapshot, request.asset)
+    return generate_remote_report(
+        request.snapshot,
+        request.asset,
+        config,
+        memory_context=request.memory_context,
+        judgment=request.judgment,
+    )
+
+
+def _build_agent_runner(
+    memory_path: Path,
+    analyst: str,
+    agent_provider: str,
+    agent_steps: int,
+    factor_store: JsonlFactorStore,
+) -> AgentResearchRunner:
+    decision_provider = _decision_provider(agent_provider, agent_steps)
+    analyst_config = _analyst_config(analyst)
+    return AgentResearchRunner(
+        root=memory_path.parent,
+        decide=decision_provider.decide,
+        provider_name=decision_provider.provider,
+        model_version=decision_provider.model_version,
+        max_steps=agent_steps,
+        report_builder=lambda request: _agent_report(request, analyst_config),
+        counts_model_calls=decision_provider.counts_model_calls,
+        store=factor_store,
+    )
+
+
+def _decision_provider(agent_provider: str, agent_steps: int):
+    if agent_provider == "remote":
+        try:
+            config = RemoteAgentConfig.from_env()
+        except ValueError as exc:
+            raise ValueError(
+                "{} 未配置模型时请使用 --agent-provider rule（本地确定性策略）。".format(exc)
+            ) from exc
+        return RemoteAgentProvider(config)
+    return RuleBasedAgentProvider(max_steps=agent_steps)
+
+
+if __name__ == "__main__":
+    app()
