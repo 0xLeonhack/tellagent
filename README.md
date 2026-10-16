@@ -227,4 +227,5 @@ uv run pytest
 - [架构与数据契约](docs/ARCHITECTURE.md)
 - [产品假设与停止条件](docs/PRODUCT.md)
 - [后续计划](docs/NEXT_STEPS.md)
+- [Agent 重构计划](docs/PLAN4AGENT.md)
 - [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [MIT License](LICENSE)
