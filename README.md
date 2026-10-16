@@ -188,6 +188,7 @@ uv run pytest
 
 ## 文档
 
+- [三分钟介绍](docs/PITCH.md)
 - [当前决策](docs/context.md)
 - [产品需求](docs/prd.md)
 - [开发守则](docs/DEVELOPMENT.md)
