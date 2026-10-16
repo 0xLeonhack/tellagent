@@ -102,3 +102,16 @@ def test_rolling_loader_calculates_real_interval_oi_change(monkeypatch):
     loader = RollingLiveLoader()
     assert loader().assets[0].open_interest_change_interval is None
     assert loader().assets[0].open_interest_change_interval == pytest.approx(0.02)
+
+
+def test_rolling_loader_can_restore_previous_oi_baseline(monkeypatch):
+    def snapshot(timeout):
+        return MarketSnapshot(
+            as_of="2026-10-08T00:05:00Z",
+            sources=["Deribit"],
+            assets=[AssetSnapshot(symbol="BTC", open_interest=1020.0)],
+        )
+
+    monkeypatch.setattr("tellagent.data.load_live_snapshot", snapshot)
+    loader = RollingLiveLoader(previous_open_interest={"BTC": 1000.0})
+    assert loader().assets[0].open_interest_change_interval == pytest.approx(0.02)

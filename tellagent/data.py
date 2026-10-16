@@ -111,9 +111,9 @@ def _deribit_value(payload: object, symbol: str, *fields: str) -> Optional[float
 class RollingLiveLoader:
     """Add real interval OI changes using only in-process previous samples."""
 
-    def __init__(self, timeout: float = 8.0):
+    def __init__(self, timeout: float = 8.0, previous_open_interest: Optional[Dict[str, float]] = None):
         self.timeout = timeout
-        self.previous_open_interest: Dict[str, float] = {}
+        self.previous_open_interest: Dict[str, float] = previous_open_interest or {}
 
     def __call__(self) -> MarketSnapshot:
         snapshot = load_live_snapshot(timeout=self.timeout)

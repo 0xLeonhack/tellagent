@@ -56,7 +56,15 @@ def research(
         ledger = JsonlLedger(memory_path.parent)
         reviewer = OutcomeReviewer(memory_path.parent)
         factor_store = JsonlFactorStore(memory_path.parent)
-        live_loader = RollingLiveLoader(timeout=timeout)
+        previous_open_interest = {}
+        for frame_record in ledger.frames():
+            value = frame_record.asset_snapshot.open_interest
+            if value is not None:
+                previous_open_interest[frame_record.asset_snapshot.symbol] = value
+        live_loader = RollingLiveLoader(
+            timeout=timeout,
+            previous_open_interest=previous_open_interest,
+        )
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
             render_reports(outcomes)
