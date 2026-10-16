@@ -143,6 +143,8 @@ MarketStateFrame + Judgment
 
 ### 阶段 3：接入 DeepSeek Agent Observer
 
+结构化 DeepSeek Agent Provider 已实现，下一步将它接入 AgentLoop 和 CLI agent mode。
+
 DeepSeek 负责选择 Regime、研究动作和下一步工具。代码继续负责：
 
 - 事实计算；
