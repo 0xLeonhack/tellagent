@@ -11,10 +11,10 @@ tellagent 研究 BTC 和 ETH，目标是发现跨来源证据冲突，并保留�
 - 使用场景：现场演示和个人本地研究。
 - 入口：单个 Python CLI。
 - 默认数据：Coinbase/Deribit 公共 API。
-- 默认分析：本地规则 Jev Observer；强 Analyst 使用 OpenAI-compatible 远程模型。
+- 默认分析：本地规则 Observer（`RuleBasedObserver`）；Jev 是可选远程 Provider；强 Analyst 使用 OpenAI-compatible 远程模型。
 - 存储：门控后的 JSONL 记忆；不使用数据库。
 - 结果：研究报告，不是交易信号。
-- 明确不做：Web、多 Agent、链上数据和自动复盘。
+- 明确不做：Web、多 Agent 投票、链上数据。自动复盘（6h/24h/7d Outcome Review）已实现；单个受约束 Agent 循环已实现（`agent` 命令）。
 - 记忆方案：使用门控后的 append-only JSONL 和记忆检索，不把数据库作为实时分析前置条件。
 
 ## 后续方向
@@ -25,7 +25,7 @@ tellagent 研究 BTC 和 ETH，目标是发现跨来源证据冲突，并保留�
 - 长期版本频率：5 分钟。
 - 长期版本结果：研究事件，不是交易信号。
 - 长期版本存储：优先继续使用门控后的 JSONL 记忆；只有规模和查询需求证明必要时才引入数据库。
-- 长期版本 agent：Observer/Jev；强 Analyst 只在门控通过后调用。
+- 长期版本 agent：双模式运行——workflow mode（`research`）：Observer → Gate → 强 Analyst → 报告；agent mode（`agent`）：Observer → Gate → 受约束 Agent 循环 → 研究报告 → 可回放 Trace。
 
 ## 不可违背的边界
 
@@ -34,6 +34,8 @@ tellagent 研究 BTC 和 ETH，目标是发现跨来源证据冲突，并保留�
 agent 判断关系：市场状态、支持/反向证据、研究优先级和有限文本摘要。
 
 系统不自动交易，不提供仓位建议，不依赖模型自由浏览互联网，不用未来修订数据回写历史。
+
+Agent 只能从 6 个动作白名单和 6 个静态注册工具中选择；每轮最多 3 步、模型驱动每轮最多 3 次模型调用；模型失败时保留错误，不伪造结果。
 
 ## Market State v2
 
@@ -55,8 +57,10 @@ Funding 拥挤状态
 - `available_time`：系统首次能看到观测的时间，回放唯一使用它过滤。
 - `MarketStateFrame`：传给 Observer 的结构化状态快照。
 - `ContinuousJudgment`：Observer 在一个 frame 上的结构化概率判断。
-- `EvidenceBundle`：当前 Demo 中指指标层产出的支持/反向/缺失证据集合；长期版本中才是触发 Analyst 时冻结的证据包（尚未实现）。
+- `EvidenceBundle`：当前 Demo 中指指标层产出的支持/反向/缺失证据集合；长期版本中才是触发 Analyst 时冻结的证据包。
 - `MarketEvent`：由确定性异常和判断轨迹共同形成的研究事件。
+- `AgentAction`：Agent 在一步内选择的研究动作，必须通过白名单校验。
+- `AgentTrace`：一次 Agent 运行的全部 action / tool call / tool result，写入 `.tellagent/agent_traces/` 可回放。
 
 ## 当前未知项
 

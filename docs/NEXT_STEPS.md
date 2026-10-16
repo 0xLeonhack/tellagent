@@ -22,9 +22,14 @@
 - [x] 用达到覆盖要求的历史基线替换对应固定阈值；
 - [ ] RuleBased 与远程 Jev 影子对比；
 - [x] Outcome 校准汇总报告；
-- [x] WorldQuant expression 草稿导出。
+- [x] WorldQuant expression 草稿导出；
+- [x] 受约束 Agent 循环：6 动作白名单、6 个静态注册工具、步数与模型调用预算；
+- [x] 可回放 AgentTrace 与 `agent-stats` 行为统计；
+- [x] 对已记录帧离线回放（`replay`），工具按 `as_of` 截断。
 
 黑客松 Demo 默认使用本地规则 Observer。远程 Jev 接口保留，但 Jev 不是项目运行前提；只有真实对比证明有增益后，才考虑让它参与正式门控。
+
+Agent 部分的设计与实现决策见 [PLAN4AGENT.md](PLAN4AGENT.md#实施决策与偏离)。下一步的 Agent 相关工作只剩“用 rule 与 remote 两套决策方回放同一批记录帧并比较统计”，不需要新的模块。
 
 ## 一、最高优先级：Point-in-Time 判断流
 
@@ -224,6 +229,8 @@ WorldQuant BRAIN 可以作为外部验证端。tellagent 负责生成带上下�
 7. Evidence ID 化
 8. FactorHypothesis 和本地验证格式
 9. WorldQuant expression 草稿导出（已完成；保留字段映射占位，不自动提交）
+10. 受约束 Agent 循环与 Trace（已完成；见 PLAN4AGENT.md）
+11. 记录帧回放与 rule / remote 决策方对比（机制已完成，等待样本积累）
 ```
 
 ## 八、暂时不要做

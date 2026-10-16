@@ -10,6 +10,8 @@
 uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 ```
 
+Agent mode 入口（受约束 Agent 循环）：`uv run python -m tellagent agent --cycles 1`；无密钥时加 `--analyst none`，走本地规则策略。
+
 系统输出：
 
 1. 数据时间与真实来源；
@@ -56,10 +58,11 @@ Coinbase / Deribit
 
 - 数据库和向量数据库；
 - Web、用户系统和通知；
-- 多 Agent 编排框架；
+- 多 Agent 投票与任意编排（已实现的是单个受约束 Agent 循环，见 `agent` 命令）；
 - 自动交易和仓位管理；
-- 新闻、社交和链上数据；
-- 完整事件生命周期和自动复盘。
+- 新闻、社交和链上数据。
+
+已实现（不再是非目标）：完整事件生命周期和自动复盘。
 
 ## 完成定义
 

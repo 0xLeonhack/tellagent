@@ -13,7 +13,7 @@
 
 </div>
 
-tellagent 每隔固定时间读取 Coinbase 现货和 Deribit 永续数据，由代码计算指标，由 Observer 判断市场状态，再由 Gate 决定是否调用 DeepSeek 等强模型。输出始终包含支持证据、反向证据、缺失数据和失效条件。
+tellagent 每隔固定时间读取 Coinbase 现货和 Deribit 永续数据，由代码计算指标，由 Observer 判断市场状态，再由 Gate 决定是否唤醒研究 Agent。Agent 只能从 6 个动作和 6 个静态注册工具里选择下一步，输出始终包含支持证据、反向证据、缺失数据和失效条件。
 
 > 它生成研究报告和因子假设，不生成交易指令。
 
@@ -30,10 +30,18 @@ Observer（默认本地规则；Jev 可选）
         ↓
 Gate（状态跃迁 / 概率跳变 / 优先级升级 / 冲突变化）
         ↓
-强 Analyst（可选，OpenAI-compatible）
+┌─ workflow 模式（research）：直接调用强 Analyst
+└─ agent 模式（agent）：Agent 在动作白名单内选下一步
+       monitor / investigate / compare_history / generate_factor
+       / wait_for_confirmation / finish   → 6 个静态注册工具
         ↓
-Rich 报告 · JSONL 账本 · 自动复盘 · 因子假设
+Rich 报告 · JSONL 账本 · AgentTrace · 自动复盘 · 因子假设
 ```
+
+两种模式共用同一条流水线和同一套账本。区别只有一个：**“什么状态值得研究”由 Gate 决定，
+“下一步做什么研究动作”在 agent 模式里由 Agent 决定**——所以 Agent 可以在状态变化后仍然
+判断“不值得研究”，从而省下强模型调用。Agent 的每一步（动作、理由、工具、参数、结果、错误）
+都写进可回放的 AgentTrace。
 
 Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Funding、证据关系和数据质量，再派生 Regime：
 
@@ -49,6 +57,31 @@ Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Fu
 
 稳定状态不会重复调用强模型。只有状态、概率、研究优先级或冲突关系变化时，Gate 才重新放行。
 
+## 受约束 Agent
+
+Agent 的动作是静态白名单，代码拥有事实、工具执行、步数预算和模型调用预算：
+
+| 动作 | 含义 |
+| --- | --- |
+| `monitor` | 状态平静，不值得研究（终止，不写报告） |
+| `wait_for_confirmation` | 关键证据缺失，等待确认（终止，不写报告） |
+| `investigate` | 需要更多事实，调用只读工具 |
+| `compare_history` | 对比历史判断、记忆或复盘校准 |
+| `generate_factor` | 把当前状态转成可验证的因子假设 |
+| `finish` | 研究动作完成，生成完整报告（终止） |
+
+| 工具 | 作用 |
+| --- | --- |
+| `read_recent_judgments` | 近期 Observer 判断 |
+| `read_similar_memory` | 相近状态的历史研究记忆 |
+| `read_outcome_calibration` | 按状态与周期聚合的确定性复盘 |
+| `read_recent_outcomes` | 该资产的 6h / 24h / 7d 复盘 |
+| `read_evidence_catalog` | 当前帧的冻结 Evidence 目录 |
+| `create_factor_hypothesis` | 写入一个白名单因子假设（唯一写入工具） |
+
+工具没有交易、Shell、Python 和网络出口；模型驱动的 Agent 每轮最多 3 步、最多 3 次模型调用；
+模型失败或返回非法决策时，账本记录 `rejected` 与错误原因，不重试、不伪造结果。
+
 ## 已实现
 
 - BTC/ETH 真实公共数据采集，不回退到虚构行情；
@@ -60,6 +93,9 @@ Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Fu
 - 稳定 Evidence ID，模型不能新增不存在的证据；
 - Point-in-Time Frame/Judgment 账本；
 - 6h、24h、7d 确定性 Outcome Review；
+- 受约束 Agent 循环：6 动作白名单、6 个静态注册工具、步数与模型调用预算；
+- 可回放的 AgentTrace 与 `agent-stats` 行为统计；
+- 对已记录帧离线回放（`replay`），工具按 `as_of` 截断，不看未来数据；
 - JSONL 相近记忆、校准汇总、因子假设和 WorldQuant 研究草稿；
 - Rich 终端报告。
 
@@ -115,6 +151,35 @@ uv run python -m tellagent research \
 
 `--cycles 0` 表示持续运行，使用 `Ctrl-C` 停止。黑客松 Demo 推荐 `--provider rule`；Jev API 不是运行前提。
 
+### Agent 模式
+
+把“下一步做什么研究动作”交给 Agent，而不是固定流水线：
+
+```bash
+uv run python -m tellagent agent --cycles 2 --interval 20 --provider rule --analyst none
+```
+
+`--agent-provider rule` 用本地确定性策略（无密钥可跑），`--agent-provider remote` 让模型自己选步骤。
+`--always-investigate` 会绕过 Gate 冷却，把每一帧都交给 Agent，用于评估 Agent 自己的判断。
+
+### 回放已记录帧
+
+不需要网络，也不会改动原账本，只追加新的 trace：
+
+```bash
+cp -r examples/demo-ledger /tmp/tellagent-demo
+uv run python -m tellagent replay --frames 3 --asset BTC \
+  --memory-path /tmp/tellagent-demo/memory.jsonl --analyst none
+```
+
+`--frame-id` 可以精确回放某一帧。回放时工具只能看到该帧 `as_of` 之前已记录的内容。
+
+### 查看 Agent 行为统计
+
+```bash
+uv run python -m tellagent agent-stats
+```
+
 ## 可选 Jev Provider
 
 官方 Jev System One 接口已经保留，但 Demo 默认不调用：
@@ -146,6 +211,7 @@ uv run python -m tellagent research --cycles 1 --provider jev --analyst remote
 | `events.jsonl` | 待复盘研究事件 |
 | `outcomes/YYYY-MM-DD.jsonl` | 6h / 24h / 7d 确定性复盘 |
 | `calibration_report.json` | 按状态与周期聚合的收益、波动和失效率 |
+| `agent_traces/YYYY-MM-DD.jsonl` | 每次 Agent 运行的完整 Trace：每步动作、理由、工具、参数、结果、终止与错误 |
 | `factor_hypotheses.jsonl` | 因子名称、输入、公式草稿、周期和测试计划 |
 | `factor_results.jsonl` | 本地或外部回测结果契约 |
 | `worldquant_drafts.md` | 带字段映射占位的 WorldQuant 研究草稿 |
@@ -155,8 +221,10 @@ uv run python -m tellagent research --cycles 1 --provider jev --analyst remote
 ## CLI
 
 ```text
-tellagent research [OPTIONS]
+tellagent research | agent | replay | agent-stats
 ```
+
+`research` 与 `agent` 共有：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -165,8 +233,30 @@ tellagent research [OPTIONS]
 | `--interval` | `300` | 两轮之间的秒数 |
 | `--timeout` | `8` | 公共 API 超时 |
 | `--memory-path` | `.tellagent/memory.jsonl` | 记忆文件及账本目录 |
-| `--provider` | `rule` | `rule` 或 `jev` |
-| `--analyst` | `remote` | `remote` 或 `none` |
+| `--provider` | `rule` | Observer：`rule` 或 `jev` |
+| `--analyst` | `remote` | 强 Analyst：`remote` 或 `none` |
+
+`agent` 与 `replay` 额外支持：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--agent-provider` | `rule` | Agent 决策方：`rule` 或 `remote` |
+| `--agent-steps` | `3` | 每帧最多步数（1–10） |
+
+`agent` 额外支持：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--always-investigate` | 关闭 | 绕过 Gate 冷却，每帧都交给 Agent（评估开关） |
+
+`replay` 额外支持：
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--frames` | `1` | 回放最近的 N 个记录帧 |
+| `--frame-id` | 无 | 精确回放某一个记录帧 |
+
+`agent-stats` 支持 `--asset` 与 `--memory-path`。
 
 运行测试：
 
@@ -180,13 +270,17 @@ uv run pytest
 - 1 小时 OI 变化没有历史源时保持缺失，不用短周期值冒充；
 - 动态阈值需要至少 24 个去重样本，否则使用默认阈值；
 - Outcome Review 需要进程持续运行，或之后重新启动并读取已有账本；
+- 新账本的头几帧通常是 `insufficient_data` / `quiet`，要看到 Agent 的升级链路需要状态发生变化
+  （用 `replay` 或已有账本演示更稳定）；
+- 文件账本适合单机持续运行，不是并发多实例的存储层；
 - WorldQuant 文件是研究草稿，必须映射平台字段并完成样本外验证；
 - 系统不下单、不管理仓位、不承诺预测收益。
 
 ## 项目价值
 
 - **压缩研究工作量**：把价格、现货成交、Funding 和 OI 组织成少量可检查的市场状态；
-- **控制模型成本**：Observer 持续运行，Gate 只把真正变化的状态交给强模型；
+- **控制模型成本**：Observer 持续运行，Gate 只唤醒 Agent，Agent 还会自己判断是否值得研究；
+- **可评估的自主性**：Agent 的动作、工具、理由和终止原因全部入账，`agent-stats` 给出步数、工具成功率、升级率和分布；
 - **约束模型幻觉**：强模型只能引用冻结的 Evidence ID，不能新增行情事实；
 - **保留研究过程**：Frame、Judgment、报告、失效条件和 Outcome 都可回放；
 - **形成可积累资产**：长期价值来自“当时看到了什么、如何判断、后来发生了什么”，而不是某个 Prompt；
@@ -220,6 +314,7 @@ uv run pytest
 
 ## 文档
 
+- [三分钟演示脚本](docs/DEMO.md)
 - [三分钟介绍](docs/PITCH.md)
 - [当前决策](docs/context.md)
 - [产品需求](docs/prd.md)

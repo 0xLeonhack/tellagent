@@ -17,7 +17,7 @@
 
 **保持**：Python 3.12 + `uv`、Coinbase/Deribit 公共数据、BTC/ETH、Jev 结构化判断、门控后才调用强模型、JSONL 记忆、Rich 报告。
 
-**不做**：运行时虚构行情或 fixture 场景、数据库/向量数据库、Web 与后台 Worker、多 Agent 编排、链上数据、自动交易与收益预测、事件生命周期与自动复盘。
+**不做**：运行时虚构行情或 fixture 场景、数据库/向量数据库、Web 与后台 Worker、多 Agent 投票与任意编排（单个受约束 Agent 循环已实现）、链上数据、自动交易与收益预测。
 
 测试里可以构造结构化样本和 Mock HTTP 响应，但不能把它们当作产品运行入口。
 
@@ -32,6 +32,7 @@ uv sync --dev
 ```bash
 uv run pytest
 uv run python -m tellagent research --cycles 1 --analyst none
+uv run python -m tellagent agent --cycles 2 --interval 20 --asset ETH --analyst none
 ```
 
 `--analyst none` 路径不需要任何密钥，会跑通数据采集 + 确定性指标 + Jev 门控 + 记忆写入。若改动了远程 Analyst / Jev 逻辑，请额外用你自己的兼容端点做一次真实单轮验证。
@@ -48,7 +49,13 @@ uv run python -m tellagent research --cycles 1 --analyst none
 - `memory.py` 使用 append-only JSONL；
 - `research.py` 是唯一的循环编排入口；
 - `renderer.py` 只负责 Rich 输出；
-- `cli.py` 只暴露 `research` 命令。
+- `cli.py` 暴露 `research`、`agent`、`agent-stats` 三个命令；
+- `agent_loop.py` 只做有限步循环与步数预算；
+- `agent_tools.py` 只注册静态工具；
+- `agent_policy.py` 只提供本地确定性策略；
+- `agent_provider.py` 只做远程结构化决策；
+- `agent_research.py` 负责单帧 Agent 运行与 Trace 写入；
+- `agent_trace.py` 只做 Trace 账本与统计。
 
 ## 工作流
 

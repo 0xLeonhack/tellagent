@@ -540,6 +540,63 @@ read_metric(metric, asset, range)
 
 Analyst 不直接访问开放网页，不临时寻找新闻原因，也不修改证据。
 
+### 受约束 Agent 循环（已实现）
+
+`research` 与 `agent` 两个命令共用同一条采集、指标、Observer 和 Gate 链路，区别只在 Gate 之后：
+
+```text
+PolicyEngine / Gate 决定是否唤醒
+  → workflow 模式：直接调用 Analyst
+  → agent 模式：AgentLoop（最多 N 步）
+        AgentDecision（动作白名单）
+          → ToolRegistry 执行静态注册工具
+          → ToolResult（回灌上下文：steps_remaining / previous_steps）
+          → 下一次 AgentDecision 或终止
+        ↓
+     终端动作是 finish / generate_factor 时调用 Analyst，否则不生成报告
+        ↓
+     AgentTrace 落账 · AgentRunSummary 聚合为 AgentStats
+```
+
+| 层次 | 归属 | 说明 |
+| --- | --- | --- |
+| Perceive | 代码 | 采集、指标、基线、Evidence ID |
+| Interpret | Observer | 状态、概率、冲突、研究优先级 |
+| 唤醒 | Gate | 纯函数策略，只看结构化字段 |
+| Decide | Agent | 只在白名单动作中选择；模型不能发明工具或参数 |
+| Act | ToolRegistry | 静态注册、只读写项目账本 |
+| 终止判定 | Agent | `monitor` / `wait_for_confirmation` 表示不值得出报告 |
+| Remember | 代码 | Frame、Judgment、Memory、AgentTrace、Factor 全部 JSONL |
+
+数据契约：
+
+```json
+{
+  "trace_id": "ETH:<frame_id>",
+  "frame_id": "...",
+  "provider": "remote-agent",
+  "model_version": "deepseek-chat",
+  "steps": 3,
+  "model_calls": 3,
+  "actions": ["investigate", "generate_factor", "finish"],
+  "tool_names": ["read_recent_judgments", "create_factor_hypothesis"],
+  "failed_tools": [],
+  "terminal_action": "finish",
+  "terminal_reason": "...",
+  "terminal_within_budget": true,
+  "confidence": 0.65,
+  "factor_hypothesis_ids": ["ETH:<frame_id>:leverage_dominance"],
+  "report_headline": "...",
+  "error": null
+}
+```
+
+`trace` 字段保留每一步的完整 `AgentDecision` 与 `AgentTrace`。账本位于
+`.tellagent/agent_traces/YYYY-MM-DD.jsonl`，append-only，不修改历史行。
+
+回放（`replay`）从 `frames/*.jsonl` 重建快照，重新确定性判断，并用该帧 `as_of`
+截断工具可见范围，只追加新的 Trace 与因子假设。
+
 ### 输出契约
 
 ```text
@@ -598,6 +655,9 @@ Analyst 不直接访问开放网页，不临时寻找新闻原因，也不修改
 tell collect --source coinbase --asset BTC --asset ETH
 tell backfill --from 2025-01-01 --to 2026-01-01
 uv run python -m tellagent research --cycles 1
+uv run python -m tellagent agent --cycles 1
+uv run python -m tellagent replay --frames 3 --asset BTC
+uv run python -m tellagent agent-stats
 tell inbox --since 24h
 tell show <event-id>
 tell replay --from 2026-01-01 --to 2026-06-30
@@ -716,7 +776,8 @@ tell evaluate --horizon 24h
 8. 实现五类非链上 MarketEvent 与生命周期。
 9. 实现证据摘要、CLI inbox 和通知预算。
 10. 实现 OutcomeReviewer 和校准报告。
-11. 最后接入 Bitcoin 与 Ethereum 链上数据。
+11. 接入 Bitcoin 与 Ethereum 链上数据。
+12. 把 Gate 之后的固定流水线升级为受约束 Agent 循环（已完成，见「十、策略与 Analyst」）。
 
 核心验收不是“生成了一段像分析师的话”，而是：
 
