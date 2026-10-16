@@ -3,6 +3,10 @@ from typing import Optional
 
 import typer
 
+from .config import load_project_env
+
+load_project_env()
+
 from .analyst import RemoteAnalystConfig, generate_remote_report
 from .data import RollingLiveLoader
 from .ledger import JsonlLedger

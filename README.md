@@ -71,6 +71,12 @@ Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Fu
 uv sync --dev
 ```
 
+复制 `.env.example` 为 `.env`，填入 DeepSeek Key 后可直接运行；`.env` 已被 Git 忽略。显式 `export` 的环境变量优先于 `.env`。
+
+```bash
+cp .env.example .env
+```
+
 ### 无需密钥
 
 使用真实行情、本地规则 Observer 和确定性报告：
