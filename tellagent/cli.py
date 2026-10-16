@@ -59,11 +59,7 @@ def research(
         live_loader = RollingLiveLoader(timeout=timeout)
 
         def on_cycle(outcomes: list[ResearchOutcome]) -> None:
-            rendered = [outcome for outcome in outcomes if outcome.report is not None]
-            if rendered:
-                render_reports(rendered)
-            else:
-                typer.echo(outcome_summary(outcomes))
+            render_reports(outcomes)
 
         run_research(
             live_loader,

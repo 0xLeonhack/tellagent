@@ -31,6 +31,8 @@ def _print_judgment(console: Console, judgment: ContinuousJudgment) -> None:
     console.print("  • 研究优先级: {}".format(judgment.research_priority))
     if judgment.contradicting_roles:
         console.print("  • 冲突角色: {}".format(", ".join(judgment.contradicting_roles)))
+    if judgment.missing_roles:
+        console.print("  • 缺失数据: {}".format("、".join(judgment.missing_roles)))
 
 
 def _print_report(console: Console, report: MarketReport) -> None:

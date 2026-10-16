@@ -1,6 +1,7 @@
 from tellagent.memory import JsonlMemory
 from tellagent.research import process_snapshot, run_research
 from tellagent.schemas import MarketReport
+from tellagent.renderer import render_reports
 from helpers import market_snapshot
 
 
@@ -62,3 +63,13 @@ def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
     assert completed == 2
     assert seen == [True, False]
     assert len(memory.records()) == 1
+
+
+def test_renderer_shows_observer_result_without_strong_report(capsys):
+    snapshot = market_snapshot()
+    outcomes = process_snapshot(snapshot, JsonlMemory("/tmp/tellagent-render-test.jsonl"), asset="ETH")
+    render_reports(outcomes)
+    output = capsys.readouterr().out
+    assert "Observer 判断" in output
+    assert "研究建议" in output
+    assert "Jev" not in output
