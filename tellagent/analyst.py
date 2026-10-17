@@ -7,7 +7,14 @@ import httpx
 
 from .metrics import analyze_asset
 from .evidence import build_evidence_catalog, resolve_evidence_ids
-from .schemas import AnalystResult, AssetSnapshot, ContinuousJudgment, MarketReport, MarketSnapshot
+from .schemas import (
+    AnalystResult,
+    AssetSnapshot,
+    ContinuousJudgment,
+    MarketAssessment,
+    MarketReport,
+    MarketSnapshot,
+)
 
 @dataclass(frozen=True)
 class RemoteAnalystConfig:
@@ -36,9 +43,10 @@ def generate_remote_report(
     client: Optional[httpx.Client] = None,
     memory_context: str = "",
     judgment: Optional[ContinuousJudgment] = None,
+    assessment: Optional[MarketAssessment] = None,
 ) -> MarketReport:
     """Ask an OpenAI-compatible endpoint to organize precomputed evidence."""
-    analysis = analyze_asset(asset)
+    analysis = analyze_asset(asset, assessment=assessment)
     catalog = build_evidence_catalog(asset.symbol, analysis.evidence)
     facts = {
         "asset": asset.model_dump(),

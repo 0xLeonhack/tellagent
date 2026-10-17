@@ -1,4 +1,5 @@
 from tellagent.memory import JsonlMemory
+from tellagent.metrics import build_deterministic_report
 from tellagent.research import _event_is_open, process_snapshot, run_research
 from tellagent.schemas import MarketReport
 from tellagent.renderer import render_reports
@@ -49,6 +50,30 @@ def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_p
     assert outcomes[0].report is not None
     assert outcomes[0].memory_record is not None
     assert outcomes[0].guidance.action == "investigate_now"
+
+
+def test_contextual_report_generator_receives_the_frozen_frame(tmp_path):
+    snapshot = market_snapshot()
+    seen = []
+
+    def generator(current, asset, judgment, frame, context):
+        seen.append(frame.frame_id)
+        return build_deterministic_report(
+            current,
+            asset,
+            judgment=judgment,
+            assessment=frame.assessment,
+        )
+
+    outcomes = process_snapshot(
+        snapshot,
+        JsonlMemory(tmp_path / "memory.jsonl"),
+        asset="ETH",
+        contextual_report_generator=generator,
+    )
+
+    assert seen == [outcomes[0].judgment.frame_id]
+    assert outcomes[0].report.state == outcomes[0].judgment.selected_value
 
 
 def test_research_pipeline_skips_strong_model_for_insufficient_snapshot(tmp_path):

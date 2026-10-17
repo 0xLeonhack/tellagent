@@ -2,7 +2,15 @@ from typing import List, Tuple
 
 from .assessment import assess_market, oi_signal
 from .evidence import build_evidence_catalog
-from .schemas import AssetSnapshot, EvidenceBundle, MarketReport, MarketSnapshot, SnapshotAnalysis
+from .schemas import (
+    AssetSnapshot,
+    ContinuousJudgment,
+    EvidenceBundle,
+    MarketAssessment,
+    MarketReport,
+    MarketSnapshot,
+    SnapshotAnalysis,
+)
 
 
 def _percent(value: float) -> str:
@@ -13,8 +21,9 @@ def analyze_asset(
     asset: AssetSnapshot,
     data_quality_score: float = 1.0,
     source_alignment_seconds: int | None = None,
+    assessment: MarketAssessment | None = None,
 ) -> SnapshotAnalysis:
-    assessment = assess_market(asset, data_quality_score, source_alignment_seconds)
+    assessment = assessment or assess_market(asset, data_quality_score, source_alignment_seconds)
     supporting = _supporting_evidence(asset, assessment)
     contradicting = _contradicting_evidence(asset, assessment)
     missing = _missing_evidence(asset)
@@ -126,15 +135,29 @@ def analysis_fields(analysis: SnapshotAnalysis) -> Tuple[str, str, float]:
     return headline, invalidation, round(min(confidence, 0.9), 2)
 
 
-def build_deterministic_report(snapshot: MarketSnapshot, asset: AssetSnapshot) -> MarketReport:
-    analysis = analyze_asset(asset)
-    headline, invalidation, confidence = analysis_fields(analysis)
+def build_deterministic_report(
+    snapshot: MarketSnapshot,
+    asset: AssetSnapshot,
+    judgment: ContinuousJudgment | None = None,
+    assessment: MarketAssessment | None = None,
+) -> MarketReport:
+    """Build a report without reclassifying a frozen historical frame."""
+    analysis = analyze_asset(asset, assessment=assessment)
+    if judgment is None:
+        headline, invalidation, confidence = analysis_fields(analysis)
+        state = analysis.suggested_state
+    else:
+        state = judgment.selected_value
+        headline, invalidation = REPORT_TEXT[state]
+        confidence = judgment.confidence
+        if judgment.invalidation_conditions:
+            invalidation = judgment.invalidation_conditions[0]
     catalog = build_evidence_catalog(asset.symbol, analysis.evidence)
     return MarketReport(
         asset=asset.symbol,
         metrics=asset,
         headline=headline,
-        state=analysis.suggested_state,
+        state=state,
         confidence=confidence,
         supporting_evidence=analysis.evidence.supporting,
         contradicting_evidence=analysis.evidence.contradicting,

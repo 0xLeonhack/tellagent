@@ -1,4 +1,5 @@
 from tellagent.metrics import analysis_fields, analyze_asset, build_deterministic_report
+from tellagent.observer import RuleBasedObserver, build_state_frame
 from tellagent.schemas import AssetSnapshot, MarketSnapshot
 
 
@@ -104,3 +105,38 @@ def test_deterministic_report_uses_computed_fields_and_snapshot_metadata():
     assert report.supporting_evidence
     assert report.contradicting_evidence
     assert report.invalidation_condition
+
+
+def test_deterministic_report_uses_frozen_judgment_for_old_frame():
+    asset = AssetSnapshot(
+        symbol="BTC",
+        price_change_1h=0.0005,
+        spot_volume_change_1h=0.01,
+        funding_rate=0.0001,
+        open_interest_change_interval=0.0007,
+    )
+    snapshot = MarketSnapshot(
+        as_of="2026-10-17T00:00:00Z",
+        sources=["test"],
+        assets=[asset],
+    )
+    frame = build_state_frame(snapshot, asset)
+    frozen_assessment = frame.assessment.model_copy(update={
+        "regime": "conflicting",
+        "alignment": "conflicting",
+    })
+    judgment = RuleBasedObserver().judge(
+        frame.model_copy(update={"assessment": frozen_assessment})
+    )
+
+    report = build_deterministic_report(
+        snapshot,
+        asset,
+        judgment=judgment,
+        assessment=frozen_assessment,
+    )
+
+    assert analyze_asset(asset).suggested_state == "quiet"
+    assert report.state == "conflicting"
+    assert report.headline == "市场活动明显，但证据关系相互冲突"
+    assert report.confidence == judgment.confidence

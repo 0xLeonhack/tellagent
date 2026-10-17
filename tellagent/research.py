@@ -19,6 +19,7 @@ from .schemas import (
     FrameLedgerRecord,
     MarketReport,
     MarketSnapshot,
+    MarketStateFrame,
     MemoryRecord,
     ResearchGuidance,
 )
@@ -28,7 +29,7 @@ from .trends import compute_judgment_trend
 
 ReportGenerator = Callable[[MarketSnapshot, AssetSnapshot], MarketReport]
 ContextualReportGenerator = Callable[
-    [MarketSnapshot, AssetSnapshot, ContinuousJudgment, str], MarketReport
+    [MarketSnapshot, AssetSnapshot, ContinuousJudgment, MarketStateFrame, str], MarketReport
 ]
 AgentRunner = Callable[[AgentRequest], AgentRunOutcome]
 
@@ -129,7 +130,9 @@ def process_snapshot(
                 # wait_for_confirmation; then no report and no memory are written.
                 investigate = agent_outcome.escalated
             elif contextual_report_generator:
-                report = contextual_report_generator(snapshot, item, judgment, related_context)
+                report = contextual_report_generator(
+                    snapshot, item, judgment, frame, related_context
+                )
             elif report_generator:
                 report = report_generator(snapshot, item)
         if ledger:

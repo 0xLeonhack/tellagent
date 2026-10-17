@@ -93,7 +93,7 @@ class AgentResearchRunner:
         self.trace_store = trace_store or JsonlAgentTraceStore(self.root)
 
     def __call__(self, request: AgentRequest) -> AgentRunOutcome:
-        analysis = analyze_asset(request.asset)
+        analysis = analyze_asset(request.asset, assessment=request.frame.assessment)
         catalog = build_evidence_catalog(request.judgment.asset, analysis.evidence)
         registry = build_research_tool_registry(
             self.root,

@@ -283,11 +283,24 @@ def _build_pipeline(
 
 def _workflow_generators(analyst: str):
     if analyst == "none":
-        return None, build_deterministic_report
+        return (
+            lambda current, item, judgment, frame, context: build_deterministic_report(
+                current,
+                item,
+                judgment=judgment,
+                assessment=frame.assessment,
+            ),
+            None,
+        )
     config = _analyst_config(analyst)
     return (
-        lambda current, item, judgment, context: generate_remote_report(
-            current, item, config, memory_context=context, judgment=judgment
+        lambda current, item, judgment, frame, context: generate_remote_report(
+            current,
+            item,
+            config,
+            memory_context=context,
+            judgment=judgment,
+            assessment=frame.assessment,
         ),
         None,
     )
@@ -306,13 +319,19 @@ def _analyst_config(analyst: str) -> Optional[RemoteAnalystConfig]:
 
 def _agent_report(request: AgentRequest, config: Optional[RemoteAnalystConfig]):
     if config is None:
-        return build_deterministic_report(request.snapshot, request.asset)
+        return build_deterministic_report(
+            request.snapshot,
+            request.asset,
+            judgment=request.judgment,
+            assessment=request.frame.assessment,
+        )
     return generate_remote_report(
         request.snapshot,
         request.asset,
         config,
         memory_context=request.memory_context,
         judgment=request.judgment,
+        assessment=request.frame.assessment,
     )
 
 
