@@ -89,6 +89,33 @@ def test_research_loop_runs_finite_cycles_and_keeps_memory(tmp_path):
     assert len(memory.records()) == 1
 
 
+def test_research_loop_can_recover_from_a_collection_error(tmp_path):
+    snapshot = market_snapshot()
+    attempts = 0
+    errors = []
+
+    def loader():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("temporary exchange outage")
+        return snapshot
+
+    completed = run_research(
+        loader,
+        JsonlMemory(tmp_path / "memory.jsonl"),
+        asset="ETH",
+        cycles=1,
+        interval=0,
+        continue_on_error=True,
+        on_error=errors.append,
+    )
+
+    assert completed == 1
+    assert attempts == 2
+    assert errors == ["temporary exchange outage"]
+
+
 def test_renderer_shows_observer_result_without_strong_report(capsys):
     snapshot = market_snapshot()
     outcomes = process_snapshot(snapshot, JsonlMemory("/tmp/tellagent-render-test.jsonl"), asset="ETH")

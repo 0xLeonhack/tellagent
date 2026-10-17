@@ -63,6 +63,32 @@ def test_one_asset_failure_does_not_drop_the_other_asset():
     assert "ETH" not in snapshot.data_errors
 
 
+def test_market_request_retries_a_transient_failure():
+    attempts = {"coinbase:BTC": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "BTC-USD" in str(request.url):
+            attempts["coinbase:BTC"] += 1
+            if attempts["coinbase:BTC"] == 1:
+                return httpx.Response(503, json={"error": "temporary"})
+        if request.url.host == "api.exchange.coinbase.com":
+            return httpx.Response(200, json=[
+                [index * 3600, "1", "1", "1", str(100 + index), "10"]
+                for index in range(7)
+            ])
+        return httpx.Response(200, json={"result": {
+            "current_funding": 0.0001, "open_interest": 1000, "timestamp": 25200000,
+        }})
+
+    snapshot = load_live_snapshot(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        now=datetime.fromtimestamp(27000, timezone.utc),
+    )
+
+    assert attempts["coinbase:BTC"] == 2
+    assert {asset.symbol for asset in snapshot.assets} == {"BTC", "ETH"}
+
+
 def test_live_adapter_rejects_short_candle_history():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[[100, "1", "1", "1", "1", "1"]])
@@ -91,6 +117,32 @@ def test_live_adapter_keeps_latest_completed_candle_when_current_bucket_is_absen
     )
     assert snapshot.assets[0].spot_price == 106
     assert snapshot.source_times["coinbase:BTC"] == "1970-01-01T07:00:00Z"
+
+
+def test_live_adapter_waits_for_the_newest_hourly_candle_to_settle():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.exchange.coinbase.com":
+            return httpx.Response(200, json=[
+                [index * 3600, "1", "1", "1", str(100 + index), "10"]
+                for index in range(8)
+            ])
+        return httpx.Response(200, json={"result": {"open_interest": 1000}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    # The newest candle opens at 07:00 and closes at 08:00. One minute after
+    # the close it may still be revised, so the loader uses the 06:00 candle.
+    early = load_live_snapshot(
+        client=client, now=datetime.fromtimestamp(28860, timezone.utc)
+    )
+    assert early.assets[0].spot_price == 106
+    assert early.source_times["coinbase:BTC"] == "1970-01-01T07:00:00Z"
+
+    # Five minutes after the close the bucket is treated as final.
+    settled = load_live_snapshot(
+        client=client, now=datetime.fromtimestamp(29100, timezone.utc)
+    )
+    assert settled.assets[0].spot_price == 107
+    assert settled.source_times["coinbase:BTC"] == "1970-01-01T08:00:00Z"
 
 
 def test_live_adapter_rejects_non_contiguous_hourly_candles():

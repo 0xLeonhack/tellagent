@@ -87,6 +87,48 @@ def test_agent_mode_runs_full_loop_and_writes_every_ledger(tmp_path: Path):
     assert (tmp_path / "memory.jsonl").exists()
 
 
+def test_remote_report_call_is_counted_separately_from_agent_decisions(tmp_path: Path):
+    snapshot = market_snapshot()
+    provider = RuleBasedAgentProvider(max_steps=3)
+    runner = AgentResearchRunner(
+        root=tmp_path,
+        decide=provider.decide,
+        provider_name=provider.provider,
+        model_version=provider.model_version,
+        max_steps=3,
+        report_builder=lambda request: build_deterministic_report(request.snapshot, request.asset),
+        counts_model_calls=False,
+        report_counts_model_calls=True,
+    )
+
+    outcome = runner(_request(snapshot, snapshot.assets[1]))
+
+    assert outcome.report is not None
+    # The rule-based Agent makes no decision calls, but building a remote
+    # report is still one billable model call.
+    assert outcome.summary.model_calls == 1
+
+
+def test_deterministic_report_does_not_add_a_model_call(tmp_path: Path):
+    snapshot = market_snapshot()
+    provider = RuleBasedAgentProvider(max_steps=3)
+    runner = AgentResearchRunner(
+        root=tmp_path,
+        decide=provider.decide,
+        provider_name=provider.provider,
+        model_version=provider.model_version,
+        max_steps=3,
+        report_builder=lambda request: build_deterministic_report(request.snapshot, request.asset),
+        counts_model_calls=False,
+        report_counts_model_calls=False,
+    )
+
+    outcome = runner(_request(snapshot, snapshot.assets[1]))
+
+    assert outcome.report is not None
+    assert outcome.summary.model_calls == 0
+
+
 def test_agent_mode_monitor_skips_report_and_memory(tmp_path: Path):
     quiet = AssetSnapshot(
         symbol="BTC",

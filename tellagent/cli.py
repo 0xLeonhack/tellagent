@@ -23,7 +23,13 @@ from .ledger import JsonlLedger
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedObserver
-from .renderer import render_agent_stats, render_audit, render_evaluation, render_reports
+from .renderer import (
+    render_agent_stats,
+    render_audit,
+    render_evaluation,
+    render_reports,
+    render_runtime_error,
+)
 from .research import replay_recorded_frames, run_research
 from .review import OutcomeReviewer
 
@@ -75,6 +81,8 @@ def research(
             reviewer=pipeline.reviewer,
             factor_store=pipeline.factor_store,
             on_cycle=render_reports,
+            continue_on_error=cycles == 0,
+            on_error=render_runtime_error,
         )
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -119,6 +127,8 @@ def agent(
             reviewer=pipeline.reviewer,
             factor_store=pipeline.factor_store,
             on_cycle=render_reports,
+            continue_on_error=cycles == 0,
+            on_error=render_runtime_error,
             agent_runner=runner,
             always_investigate=always_investigate,
         )
@@ -323,6 +333,7 @@ def _build_agent_runner(
         max_steps=agent_steps,
         report_builder=lambda request: _agent_report(request, analyst_config),
         counts_model_calls=decision_provider.counts_model_calls,
+        report_counts_model_calls=analyst_config is not None,
         store=factor_store,
     )
 

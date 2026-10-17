@@ -17,7 +17,8 @@ def test_live_snapshot_computes_volatility_and_volume_ratio():
 
     snapshot = load_live_snapshot(
         client=httpx.Client(transport=httpx.MockTransport(handler)),
-        now=datetime.fromtimestamp(8 * 3600, timezone.utc),
+        # Five minutes after the last candle closes, it is treated as final.
+        now=datetime.fromtimestamp(8 * 3600 + 300, timezone.utc),
     )
     asset = snapshot.assets[0]
     assert asset.realized_volatility_6h is not None

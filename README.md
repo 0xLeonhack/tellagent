@@ -79,7 +79,8 @@ Agent 的动作是静态白名单，代码拥有事实、工具执行、步数�
 | `read_evidence_catalog` | 当前帧的冻结 Evidence 目录 |
 | `create_factor_hypothesis` | 写入一个白名单因子假设（唯一写入工具） |
 
-工具没有交易、Shell、Python 和网络出口；模型驱动的 Agent 每轮最多 3 步、最多 3 次模型调用；
+工具没有交易、Shell、Python 和网络出口；模型驱动的 Agent 每轮最多 3 步、最多 3 次决策调用；
+若终端动作是 `finish` 或 `generate_factor`，再调用 1 次强 Analyst 生成报告（最多共 4 次模型调用）。
 模型失败或返回非法决策时，账本记录 `rejected` 与错误原因，不重试、不伪造结果。
 
 ## 已实现
@@ -295,6 +296,7 @@ uv run pytest
 ## 当前限制
 
 - 第一轮没有 OI 变化基线；第二轮起计算真实相邻采样变化；
+- Coinbase 最新小时 K 线会等 5 分钟结算后再使用，避免交易所修订期的收盘价和成交量污染判断；
 - 1 小时 OI 变化没有历史源时保持缺失，不用短周期值冒充；区间 OI 变化先归一化为每小时变化率；
 - 公开接口没有历史 OI，因此无法做全状态历史回测；阈值基于可获得的真实价格、
   成交量和 funding 分布校准，见 [docs/ACCURACY.md](docs/ACCURACY.md)；

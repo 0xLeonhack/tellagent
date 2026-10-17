@@ -164,6 +164,28 @@ def test_legacy_judgment_must_agree_with_its_frozen_assessment(tmp_path):
     assert "judgment_legacy_coherence" in failed
 
 
+def test_legacy_rule_scores_may_use_the_old_non_argmax_contract(tmp_path):
+    ledger = JsonlLedger(tmp_path)
+    memory = JsonlMemory(tmp_path / "memory.jsonl")
+    _record(ledger, memory, "2026-10-08T00:00:00Z")
+    _rewrite_as_legacy(tmp_path)
+    judgment_path = tmp_path / "judgments" / "2026-10-08.jsonl"
+    judgment = json.loads(judgment_path.read_text().splitlines()[0])
+    selected = judgment["selected_value"]
+    rival = next(name for name in judgment["probabilities"] if name != selected)
+    judgment["probabilities"] = {
+        name: 0.0 for name in judgment["probabilities"]
+    }
+    judgment["probabilities"][selected] = 0.0
+    judgment["probabilities"][rival] = 1.0
+    judgment_path.write_text(json.dumps(judgment) + "\n")
+
+    report = audit_ledger(tmp_path)
+
+    assert report.ok, [check for check in report.checks if not check.ok]
+    assert report.legacy_checked == 1
+
+
 def _candles(now):
     start = int(now.timestamp()) - 8 * 3600
     return [
@@ -172,11 +194,12 @@ def _candles(now):
     ]
 
 
-def _frame_record(asset, as_of, received_time):
+def _frame_record(asset, as_of, received_time, source_times=None):
     return SimpleNamespace(
         frame=SimpleNamespace(asset=asset.symbol, as_of=as_of),
         asset_snapshot=asset,
         received_time=received_time,
+        source_times=source_times or {},
     )
 
 
@@ -193,7 +216,12 @@ def test_recorded_frame_matches_public_candle_history():
         spot_volume_change_1h=metrics["spot_volume_change_1h"],
         spot_volume_ratio_6h=metrics["spot_volume_ratio_6h"],
     )
-    record = _frame_record(asset, "2026-10-08T12:00:00Z", "2026-10-08T12:00:00Z")
+    record = _frame_record(
+        asset,
+        "2026-10-08T12:00:00Z",
+        "2026-10-08T12:10:00Z",
+        {"coinbase:BTC": "2026-10-08T12:00:00Z"},
+    )
 
     check = _compare_recorded_history("BTC", [record], candles)
 
@@ -214,12 +242,34 @@ def test_recorded_frame_tampering_is_detected_against_candle_history():
         spot_volume_change_1h=metrics["spot_volume_change_1h"],
         spot_volume_ratio_6h=metrics["spot_volume_ratio_6h"],
     )
-    record = _frame_record(asset, "2026-10-08T12:00:00Z", "2026-10-08T12:00:00Z")
+    record = _frame_record(
+        asset,
+        "2026-10-08T12:00:00Z",
+        "2026-10-08T12:10:00Z",
+        {"coinbase:BTC": "2026-10-08T12:00:00Z"},
+    )
 
     check = _compare_recorded_history("BTC", [record], candles)
 
     assert not check.ok
     assert "spot_price" in check.detail
+
+
+def test_frame_captured_before_candle_settlement_is_not_compared_exactly():
+    now = datetime(2026, 10, 8, 12, 0, 0, tzinfo=timezone.utc)
+    candles = _candles(now)
+    asset = AssetSnapshot(symbol="BTC", spot_price=999999.0)
+    record = _frame_record(
+        asset,
+        "2026-10-08T12:00:00Z",
+        "2026-10-08T12:01:00Z",
+        {"coinbase:BTC": "2026-10-08T12:00:00Z"},
+    )
+
+    check = _compare_recorded_history("BTC", [record], candles)
+
+    assert check.ok
+    assert "still settling" in check.detail
 
 
 def test_live_comparison_accepts_live_ticker_drift():

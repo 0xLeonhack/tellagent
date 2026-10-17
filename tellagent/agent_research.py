@@ -69,6 +69,7 @@ class AgentResearchRunner:
         max_steps: int = 3,
         report_builder: Optional[ReportBuilder] = None,
         counts_model_calls: bool = True,
+        report_counts_model_calls: bool = False,
         store: Optional[JsonlFactorStore] = None,
         trace_store: Optional[JsonlAgentTraceStore] = None,
     ):
@@ -87,6 +88,7 @@ class AgentResearchRunner:
         self.max_steps = max_steps
         self.report_builder = report_builder
         self.counts_model_calls = counts_model_calls
+        self.report_counts_model_calls = report_counts_model_calls
         self.factor_store = store or JsonlFactorStore(self.root)
         self.trace_store = trace_store or JsonlAgentTraceStore(self.root)
 
@@ -123,7 +125,8 @@ class AgentResearchRunner:
         escalated = terminal_action in ESCALATING_ACTIONS
         error = None
         report = None
-        if escalated and self.report_builder is not None:
+        report_attempted = escalated and self.report_builder is not None
+        if report_attempted:
             try:
                 report = self.report_builder(request)
             except ValueError as exc:
@@ -142,6 +145,9 @@ class AgentResearchRunner:
             factor_ids=factor_ids,
             report=report,
             error=error,
+            report_model_calls=(
+                1 if report_attempted and self.report_counts_model_calls else 0
+            ),
         )
         return self._finish(summary, report, factor_ids, escalated)
 
@@ -176,7 +182,11 @@ class AgentResearchRunner:
         report: Optional[MarketReport],
         error: Optional[str],
         model_calls: Optional[int] = None,
+        report_model_calls: int = 0,
     ) -> AgentRunSummary:
+        decision_calls = model_calls
+        if decision_calls is None:
+            decision_calls = len(decisions) if self.counts_model_calls else 0
         return AgentRunSummary(
             trace_id=trace_id,
             frame_id=request.frame.frame_id,
@@ -188,10 +198,7 @@ class AgentResearchRunner:
             research_priority=request.judgment.research_priority,
             decision_provider=self.provider_name,
             steps=len(decisions),
-            model_calls=(
-                model_calls if model_calls is not None
-                else (len(decisions) if self.counts_model_calls else 0)
-            ),
+            model_calls=decision_calls + report_model_calls,
             actions=[item.action.action for item in decisions],
             tool_names=[item.action.tool_name for item in decisions if item.action.tool_name],
             failed_tools=[

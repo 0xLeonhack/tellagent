@@ -49,6 +49,23 @@ uv run python -m tellagent replay --frames 3 --asset BTC \
 
 回放同时验证了 Point-in-Time 纪律：工具只能看到 `as_of` 之前已记录的内容，看不到未来数据。
 
+### 为什么不能靠现场等事件
+
+默认 Observer（`--provider rule`）是本地规则代码，不调用模型；只有 Gate 发现新的材料性信号后，
+才会调用远程 Agent，强 Analyst 是否调用再由 Agent 决定。真实市场大多数时间平静，所以现场演示的期望是：
+
+- 当前采集器实测约 26 分钟、每个资产 26 帧、Gate 放行 0 次、AI 调用 0 次；
+- 30 天公开数据中，BTC 8.2%、ETH 12.6% 的小时超过 0.6% 的涨跌阈值；
+  按状态切换的代理估计约每天每资产 5 次活跃状态变化；
+- 两个资产合计，正常时段约 **0–1 次 Gate 放行/小时**，活跃时段 1–3 次；
+  其中大多数小时是 0 次。3–10 分钟的现场窗口不能保证命中。
+
+这不是缺陷，而是 Gate 的目的：过滤噪声、控制成本。演示时把“现场静默”当作第一幕，
+用第 2 节的真实记录帧回放展示完整链路；不要为了现场效果调低阈值或伪造行情。
+
+如果使用 `--provider jev`，Observer 本身每帧每资产调用一次模型：60 秒间隔即 120 次/小时
+（两个资产），300 秒间隔为 24 次/小时。因此默认使用 `rule`，Jev 只按需启用。
+
 ## 3. 接入模型：让模型自己决策（需要 `TELLAGENT_MODEL_API_KEY`）
 
 ```bash
@@ -109,8 +126,9 @@ tellagent · Agent 行为统计
 `.tellagent/` 里的 Frame、Judgment、AgentTrace、Outcome 都可以重放。
 
 **成本和延迟？**
-Observer 和 Gate 在本地跑，稳定状态不唤醒 Agent；模型驱动的 Agent 每轮最多 3 次模型调用，
-步数上限默认 3（`--agent-steps`）。`agent-stats` 里的“平均模型调用”就是这笔账。
+Observer 和 Gate 在本地跑，稳定状态不唤醒 Agent；模型驱动的 Agent 每轮最多 3 次决策调用，
+步数上限默认 3（`--agent-steps`）；若终端动作是 `finish` 或 `generate_factor`，再调用 1 次
+强 Analyst 写报告（最多共 4 次）。`agent-stats` 里的“平均模型调用”包含报告调用，就是这笔账。
 
 **和 workflow 模式（`research`）的关系？**
 同一条流水线、同一套账本。`research` 是确定性流水线；`agent` 把“下一步做什么研究”交给 Agent，

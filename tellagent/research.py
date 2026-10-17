@@ -297,13 +297,24 @@ def run_research(
     on_cycle: Optional[Callable[[List[ResearchOutcome]], None]] = None,
     agent_runner: Optional[AgentRunner] = None,
     always_investigate: bool = False,
+    continue_on_error: bool = False,
+    on_error: Optional[Callable[[str], None]] = None,
 ) -> int:
     """Run the gated research loop; cycles=0 means continue until interrupted."""
     if cycles < 0 or interval < 0:
         raise ValueError("cycles and interval must be zero or greater")
     completed = 0
     while cycles == 0 or completed < cycles:
-        snapshot = snapshot_loader()
+        try:
+            snapshot = snapshot_loader()
+        except (OSError, ValueError) as exc:
+            if not continue_on_error:
+                raise
+            if on_error:
+                on_error(str(exc))
+            if interval:
+                time.sleep(interval)
+            continue
         outcomes = process_snapshot(
             snapshot, memory, report_generator, asset, contextual_report_generator,
             observer, ledger, reviewer, factor_store, agent_runner, always_investigate,

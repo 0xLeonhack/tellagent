@@ -51,6 +51,17 @@ def render_reports(outcomes: Iterable[ResearchOutcome], console: Console = None)
         _print_outcome(console, outcome)
 
 
+def render_runtime_error(message: str, console: Console = None) -> None:
+    """Show a recoverable continuous-loop error without a traceback wall."""
+    console = console or Console()
+    console.print(Panel(
+        Text(message),
+        title="本轮采集失败 · 下个周期自动重试",
+        border_style="red",
+        box=box.ROUNDED,
+    ))
+
+
 def render_agent_stats(stats: AgentStats, console: Console = None) -> None:
     console = console or Console()
     console.print()

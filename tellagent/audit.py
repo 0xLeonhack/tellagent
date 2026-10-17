@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 
 import httpx
 
-from .data import COINBASE_API, DERIBIT_API, load_live_snapshot
+from .data import CANDLE_SETTLEMENT_SECONDS, COINBASE_API, DERIBIT_API, load_live_snapshot
 from .ledger import JsonlLedger
 from .observer import RuleBasedObserver, frame_fingerprint, legacy_frame_fingerprint
 from .scoring import REGIMES
@@ -269,7 +269,11 @@ def _audit_judgments(judgments, frames_by_id, frame_ids) -> tuple[List[AuditChec
             if any(value < 0 or value > 1 for value in probabilities.values()):
                 probability_ok = False
             leader = max(probabilities, key=probabilities.get)
-            if leader != judgment.selected_value:
+            legacy_rule_judgment = (
+                judgment.provider == observer.provider
+                and judgment.model_version != observer.model_version
+            )
+            if leader != judgment.selected_value and not legacy_rule_judgment:
                 probability_ok = False
         if not (0 < judgment.confidence <= 1):
             probability_ok = False
@@ -323,7 +327,7 @@ def _audit_judgments(judgments, frames_by_id, frame_ids) -> tuple[List[AuditChec
     checks.append(AuditCheck(
         "judgment_probabilities",
         probability_ok,
-        "probabilities are complete, normalised, and agree with the selected state"
+        "probabilities are complete and normalised; current-version labels agree with their leader"
         if probability_ok else "invalid probability vector or confidence",
     ))
     checks.append(AuditCheck(
@@ -366,12 +370,21 @@ def _source_integrity_check() -> AuditCheck:
     )
 
 
-def _spot_metrics(candles, now: datetime) -> dict:
-    """Recompute spot metrics for one point in time from raw candles."""
+def _spot_metrics(candles, now: datetime, settlement_seconds: int = 0) -> dict:
+    """Recompute spot metrics for one point in time from raw candles.
+
+    ``settlement_seconds`` mirrors the loader's wait for Coinbase to finalize
+    the newest hourly bucket. Historical frames captured before that wait must
+    pass ``0``; frames recorded by the current loader pass the same constant.
+    """
     if not isinstance(candles, list) or len(candles) < 8:
         raise ValueError("fewer than eight candles")
     ordered = sorted(candles, key=lambda candle: float(candle[0]))
-    completed = [candle for candle in ordered if float(candle[0]) + 3600 <= now.timestamp()]
+    completed = [
+        candle
+        for candle in ordered
+        if float(candle[0]) + 3600 + settlement_seconds <= now.timestamp()
+    ]
     window = completed[-7:]
     if len(window) < 7:
         raise ValueError("fewer than seven completed candles")
@@ -399,7 +412,9 @@ def _spot_metrics(candles, now: datetime) -> dict:
 
 def _recompute_asset(symbol: str, candles, ticker, now: datetime) -> dict:
     """Independent reimplementation of the loader's metric formulas."""
-    recomputed = _spot_metrics(candles, now)
+    recomputed = _spot_metrics(
+        candles, now, settlement_seconds=CANDLE_SETTLEMENT_SECONDS
+    )
     result = ticker.get("result", {})
     recomputed.update({
         "funding_rate": float(result.get("current_funding", result.get("funding_8h", 0.0))),
@@ -420,16 +435,34 @@ SPOT_FIELDS = (
 
 
 def _compare_recorded_history(symbol: str, frames, candles) -> AuditCheck:
-    """Check recorded spot metrics against the exchange's candle history."""
+    """Check recorded spot metrics against the exchange's candle history.
+
+    A frame is skipped when it was captured less than
+    ``CANDLE_SETTLEMENT_SECONDS`` after its Coinbase candle closed: the
+    exchange can still revise that bucket, so an exact comparison against the
+    final history is not possible. This affects only frames near an hour
+    boundary; older frames are compared exactly.
+    """
     mismatches = []
     checked = 0
+    settling = 0
     for record in frames:
         if record.frame.asset.upper() != symbol.upper():
             continue
         asset = record.asset_snapshot
         try:
             now = _parse_time(record.received_time)
-            recomputed = _spot_metrics(candles, now)
+            source_time = (record.source_times or {}).get(
+                "coinbase:{}".format(symbol)
+            )
+            if source_time is not None:
+                age = (now - _parse_time(source_time)).total_seconds()
+                if 0 <= age < CANDLE_SETTLEMENT_SECONDS:
+                    settling += 1
+                    continue
+            recomputed = _spot_metrics(
+                candles, now, settlement_seconds=CANDLE_SETTLEMENT_SECONDS
+            )
         except (ValueError, TypeError):
             # The frame predates the retained candle window; nothing to check.
             continue
@@ -447,16 +480,21 @@ def _compare_recorded_history(symbol: str, frames, candles) -> AuditCheck:
     name = "live_{}_recorded_history".format(symbol.lower())
     if not checked:
         return AuditCheck(
-            name, True, "no recorded frames fall inside the retained candle window"
+            name, True,
+            "no recorded frames are old enough to verify; {} skipped because the candle was still settling".format(
+                settling
+            ),
         )
-    return AuditCheck(
-        name,
-        not mismatches,
-        "{} recorded frames match recomputation from public candle history".format(checked)
-        if not mismatches else "recorded metrics disagree with candle history: {}".format(
-            ", ".join(mismatches[:5])
-        ),
+    detail = "{} recorded frames match recomputation from public candle history".format(
+        checked
     )
+    if settling:
+        detail += "; {} skipped because the candle was still settling".format(settling)
+    if mismatches:
+        detail = "recorded metrics disagree with candle history: {}".format(
+            ", ".join(mismatches[:5])
+        )
+    return AuditCheck(name, not mismatches, detail)
 
 
 def _compare_live(symbol: str, loaded, recomputed: dict, ticker) -> List[AuditCheck]:

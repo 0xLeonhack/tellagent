@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime, timezone
 from hashlib import sha256
 from statistics import median
@@ -11,6 +12,14 @@ from .schemas import AssetSnapshot, MarketSnapshot
 
 COINBASE_API = "https://api.exchange.coinbase.com"
 DERIBIT_API = "https://www.deribit.com/api/v2"
+REQUEST_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 0.2
+
+# Coinbase can still revise the newest hourly candle for a few minutes after
+# its nominal close (observed on 2026-10-17: close and volume changed after
+# 04:00). Treating that candle as final produced a one-frame price/volume
+# spike. Wait for the bucket to settle before using it as history.
+CANDLE_SETTLEMENT_SECONDS = 300
 
 
 def load_live_snapshot(
@@ -74,7 +83,11 @@ def _asset_from_sources(
     if not isinstance(candles, list) or len(candles) < 7:
         raise ValueError("Coinbase returned fewer than seven hourly candles for {}".format(symbol))
     ordered = sorted(candles, key=lambda candle: float(candle[0]))
-    completed = [candle for candle in ordered if float(candle[0]) + 3600 <= now.timestamp()]
+    completed = [
+        candle
+        for candle in ordered
+        if float(candle[0]) + 3600 + CANDLE_SETTLEMENT_SECONDS <= now.timestamp()
+    ]
     if len(completed) < 7:
         raise ValueError("Coinbase returned insufficient completed candles for {}".format(symbol))
     window = completed[-7:]
@@ -181,12 +194,19 @@ class RollingLiveLoader:
 
 
 def _get_json(client: httpx.Client, url: str, params: Dict[str, object]) -> object:
-    try:
-        response = client.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ValueError("Market data request failed: {}".format(url)) from exc
+    last_error = None
+    for attempt in range(REQUEST_ATTEMPTS):
+        try:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            last_error = exc
+            if attempt + 1 < REQUEST_ATTEMPTS:
+                time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+    raise ValueError("Market data request failed after {} attempts: {}".format(
+        REQUEST_ATTEMPTS, url
+    )) from last_error
 
 
 def _payload_hash(payload: object) -> str:
