@@ -2,6 +2,7 @@ import pytest
 
 from tellagent.metrics import analyze_asset
 from tellagent.observer import RuleBasedJevObserver, build_state_frame
+from tellagent.assessment import assess_snapshot_quality
 from tellagent.schemas import AssetSnapshot, MarketSnapshot
 
 
@@ -53,3 +54,22 @@ def test_missing_data_and_quiet_are_distinct():
     ))
     assert missing.suggested_state == "insufficient_data"
     assert quiet.suggested_state == "quiet"
+
+
+def test_source_alignment_quality_degrades_stale_sources():
+    asset = AssetSnapshot(symbol="BTC", price_change_1h=0.03, open_interest_change_interval=0.02)
+    snapshot = MarketSnapshot(
+        as_of="2026-10-16T00:00:00Z",
+        sources=["Coinbase", "Deribit"],
+        assets=[asset],
+        source_times={
+            "coinbase:BTC": "2026-10-15T23:00:00Z",
+            "deribit:BTC": "2026-10-16T00:00:00Z",
+        },
+    )
+    score, alignment = assess_snapshot_quality(snapshot, asset)
+    assert score == 0.25
+    assert alignment == 3600
+    frame = build_state_frame(snapshot, asset)
+    assert frame.assessment.data_quality == "insufficient"
+    assert frame.quality_summary["source_alignment_seconds"] == "3600"

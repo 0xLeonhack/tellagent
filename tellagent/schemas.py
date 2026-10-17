@@ -110,6 +110,8 @@ class MarketAssessment(BaseModel):
         "insufficient_data",
     ]
     risk_flags: List[str] = Field(default_factory=list)
+    data_quality_score: float = Field(default=1.0, ge=0, le=1)
+    source_alignment_seconds: Optional[int] = Field(default=None, ge=0)
 
 
 class FeatureBaseline(BaseModel):

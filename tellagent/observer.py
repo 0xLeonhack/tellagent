@@ -6,7 +6,7 @@ from typing import Dict, List, Protocol
 
 import httpx
 
-from .assessment import assess_market
+from .assessment import assess_market, assess_snapshot_quality
 from .metrics import REPORT_TEXT, analyze_asset
 from .schemas import AssetSnapshot, ContinuousJudgment, FeatureBaseline, MarketStateFrame, MarketSnapshot
 
@@ -40,7 +40,8 @@ def build_state_frame(
     asset: AssetSnapshot,
     baseline_state: Dict[str, FeatureBaseline] | None = None,
 ) -> MarketStateFrame:
-    analysis = analyze_asset(asset)
+    quality_score, alignment_seconds = assess_snapshot_quality(snapshot, asset)
+    analysis = analyze_asset(asset, quality_score, alignment_seconds)
     frame_id = sha256(
         "{}:{}:{}".format(asset.symbol, snapshot.as_of, asset.model_dump_json()).encode()
     ).hexdigest()[:16]
@@ -62,6 +63,8 @@ def build_state_frame(
             "source_count": str(len(snapshot.sources)),
             "missing_count": str(len(analysis.evidence.missing)),
             "status": analysis.assessment.data_quality,
+            "score": "{:.2f}".format(quality_score),
+            "source_alignment_seconds": str(alignment_seconds) if alignment_seconds is not None else "unknown",
         },
         baseline_state=baseline_state or {},
         strategy_thresholds=asset.strategy_thresholds,
@@ -77,7 +80,11 @@ class RuleBasedObserver:
 
     def judge(self, frame: MarketStateFrame) -> ContinuousJudgment:
         started = datetime.now(timezone.utc)
-        assessment = frame.assessment or assess_market(_asset_from_frame(frame))
+        assessment = frame.assessment or assess_market(
+            _asset_from_frame(frame),
+            data_quality_score=float(frame.quality_summary.get("score", "1.0")),
+            source_alignment_seconds=_safe_int(frame.quality_summary.get("source_alignment_seconds")),
+        )
         scores = _heuristic_scores(frame, assessment)
         conflicts = _conflict_roles(assessment)
         now = datetime.now(timezone.utc)
@@ -258,6 +265,15 @@ def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:
         open_interest_change_1h=frame.leverage_state.get("open_interest_change_1h"),
         strategy_thresholds=frame.strategy_thresholds,
     )
+
+
+def _safe_int(value: str | None) -> int | None:
+    if value in {None, "unknown"}:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _frame_oi_signal(frame: MarketStateFrame) -> tuple[float | None, float]:

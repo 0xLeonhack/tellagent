@@ -9,8 +9,12 @@ def _percent(value: float) -> str:
     return "{:.2f}%".format(value * 100)
 
 
-def analyze_asset(asset: AssetSnapshot) -> SnapshotAnalysis:
-    assessment = assess_market(asset)
+def analyze_asset(
+    asset: AssetSnapshot,
+    data_quality_score: float = 1.0,
+    source_alignment_seconds: int | None = None,
+) -> SnapshotAnalysis:
+    assessment = assess_market(asset, data_quality_score, source_alignment_seconds)
     supporting = _supporting_evidence(asset, assessment)
     contradicting = _contradicting_evidence(asset, assessment)
     missing = _missing_evidence(asset)

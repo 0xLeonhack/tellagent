@@ -1,4 +1,6 @@
-from .schemas import AssetSnapshot, MarketAssessment
+from datetime import datetime
+
+from .schemas import AssetSnapshot, MarketAssessment, MarketSnapshot
 
 
 DEFAULT_PRICE_THRESHOLD = 0.02
@@ -8,7 +10,11 @@ DEFAULT_OI_1H_THRESHOLD = 0.08
 FUNDING_EXTREME_THRESHOLD = 0.0002
 
 
-def assess_market(asset: AssetSnapshot) -> MarketAssessment:
+def assess_market(
+    asset: AssetSnapshot,
+    data_quality_score: float = 1.0,
+    source_alignment_seconds: int | None = None,
+) -> MarketAssessment:
     thresholds = asset.strategy_thresholds
     price_threshold = thresholds.get("price_change_1h", DEFAULT_PRICE_THRESHOLD)
     volume_threshold = thresholds.get("spot_volume_change_1h", DEFAULT_VOLUME_THRESHOLD)
@@ -18,7 +24,7 @@ def assess_market(asset: AssetSnapshot) -> MarketAssessment:
     leverage_change = _leverage_state(oi, oi_threshold)
     spot_confirmation = _spot_state(asset.spot_volume_change_1h, volume_threshold)
     funding_state = _funding_state(asset.funding_rate)
-    data_quality = _data_quality(asset, oi)
+    data_quality = _data_quality(asset, oi, data_quality_score)
     regime, alignment = _derive_regime(
         price_direction, price_strength, leverage_change, spot_confirmation, data_quality
     )
@@ -35,7 +41,26 @@ def assess_market(asset: AssetSnapshot) -> MarketAssessment:
         data_quality=data_quality,
         regime=regime,
         risk_flags=risk_flags,
+        data_quality_score=data_quality_score,
+        source_alignment_seconds=source_alignment_seconds,
     )
+
+
+def assess_snapshot_quality(snapshot: MarketSnapshot, asset: AssetSnapshot) -> tuple[float, int | None]:
+    """Score source freshness/alignment without changing the underlying facts."""
+    times = []
+    for key in ("coinbase:{}".format(asset.symbol), "deribit:{}".format(asset.symbol)):
+        value = snapshot.source_times.get(key)
+        if value is not None:
+            times.append(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    if len(times) < 2:
+        return 0.5, None
+    alignment = int(abs((times[0] - times[1]).total_seconds()))
+    if alignment <= 300:
+        return 1.0, alignment
+    if alignment <= 900:
+        return 0.7, alignment
+    return 0.25, alignment
 
 
 def oi_signal(asset: AssetSnapshot) -> tuple[float | None, float]:
@@ -92,7 +117,9 @@ def _funding_state(value: float | None) -> str:
     return "neutral"
 
 
-def _data_quality(asset: AssetSnapshot, oi: float | None) -> str:
+def _data_quality(asset: AssetSnapshot, oi: float | None, score: float) -> str:
+    if score < 0.5:
+        return "insufficient"
     if asset.price_change_1h is None or oi is None:
         return "insufficient"
     if asset.spot_volume_change_1h is None or asset.funding_rate is None:
