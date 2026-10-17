@@ -1,6 +1,7 @@
 from statistics import median
 from typing import Dict, Iterable, Optional
 
+from .assessment import hourly_open_interest_change
 from .schemas import AssetSnapshot, FeatureBaseline, FrameLedgerRecord
 
 
@@ -21,7 +22,9 @@ def compute_feature_baselines(
     return {
         feature: _baseline(
             _historical_values(records, current.symbol, feature),
-            getattr(current, feature),
+            hourly_open_interest_change(current)
+            if feature == "open_interest_change_interval"
+            else getattr(current, feature),
             min_samples,
         )
         for feature in FEATURES
@@ -35,6 +38,7 @@ def build_strategy_thresholds(baselines: Dict[str, FeatureBaseline]) -> Dict[str
         "price_change_1h": ("price_change_1h", 0.005, 0.05),
         "spot_volume_change_1h": ("spot_volume_change_1h", 0.02, 2.0),
         "open_interest_change_interval": ("oi_interval", 0.0025, 0.05),
+        "funding_rate": ("funding_extreme", 0.00005, 0.001),
     }
     for feature, (name, lower, upper) in mappings.items():
         baseline = baselines.get(feature)
@@ -55,7 +59,10 @@ def _historical_values(
         if source_key in seen:
             continue
         seen.add(source_key)
-        value = getattr(record.asset_snapshot, feature)
+        if feature == "open_interest_change_interval":
+            value = hourly_open_interest_change(record.asset_snapshot)
+        else:
+            value = getattr(record.asset_snapshot, feature)
         if value is not None:
             values.append(value)
     return values

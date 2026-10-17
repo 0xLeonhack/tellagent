@@ -180,6 +180,31 @@ uv run python -m tellagent replay --frames 3 --asset BTC \
 uv run python -m tellagent agent-stats
 ```
 
+### 审计数据与判断
+
+```bash
+# 离线：重算帧 ID/哈希、校验时间与概率、从冻结帧复现每条判断
+uv run python -m tellagent audit --limit 200
+
+# 联网：重新请求 Coinbase/Deribit，用独立实现重算全部指标，
+# 并用公开 K 线回查每一帧记录时的现货指标
+uv run python -m tellagent audit --limit 200 --live
+```
+
+审计失败时命令以退出码 1 结束。它不信任流水线自己的记账：帧 ID 由帧字段重算，
+判断由另一条代码路径复现，实盘指标由独立公式重算。详见
+[docs/ACCURACY.md](docs/ACCURACY.md)。
+
+### 经验校准与 Gate 对照
+
+```bash
+uv run python -m tellagent evaluate --days 30
+```
+
+该命令下载 30 天公共小时 K 线和 funding 历史，输出真实特征分位数、前向信息检验，
+以及同一批实盘判断上旧 Gate 与新 Gate 的升级/误报对照。历史 OI 不可得，
+因此不做全状态回测，系统也不会编造这段数据。
+
 ## 可选 Jev Provider
 
 官方 Jev System One 接口已经保留，但 Demo 默认不调用：
@@ -221,7 +246,7 @@ uv run python -m tellagent research --cycles 1 --provider jev --analyst remote
 ## CLI
 
 ```text
-tellagent research | agent | replay | agent-stats
+tellagent research | agent | replay | agent-stats | audit | evaluate
 ```
 
 `research` 与 `agent` 共有：
@@ -258,6 +283,9 @@ tellagent research | agent | replay | agent-stats
 
 `agent-stats` 支持 `--asset` 与 `--memory-path`。
 
+`audit` 支持 `--asset`、`--limit`、`--live`、`--timeout` 与 `--memory-path`；
+`evaluate` 支持 `--days`（7–90）、`--asset`、`--memory-path` 与 `--json`。
+
 运行测试：
 
 ```bash
@@ -267,7 +295,10 @@ uv run pytest
 ## 当前限制
 
 - 第一轮没有 OI 变化基线；第二轮起计算真实相邻采样变化；
-- 1 小时 OI 变化没有历史源时保持缺失，不用短周期值冒充；
+- 1 小时 OI 变化没有历史源时保持缺失，不用短周期值冒充；区间 OI 变化先归一化为每小时变化率；
+- 公开接口没有历史 OI，因此无法做全状态历史回测；阈值基于可获得的真实价格、
+  成交量和 funding 分布校准，见 [docs/ACCURACY.md](docs/ACCURACY.md)；
+- Observer 输出的是证据加权 softmax 分布，不是经过概率校准的预测；UI 标记为“启发式分数”；
 - 动态阈值需要至少 24 个去重样本，否则使用默认阈值；
 - Outcome Review 需要进程持续运行，或之后重新启动并读取已有账本；
 - 新账本的头几帧通常是 `insufficient_data` / `quiet`，要看到 Agent 的升级链路需要状态发生变化

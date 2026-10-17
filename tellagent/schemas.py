@@ -16,6 +16,7 @@ class AssetSnapshot(BaseModel):
     funding_rate: Optional[float] = None
     open_interest: Optional[float] = None
     open_interest_change_interval: Optional[float] = None
+    open_interest_interval_seconds: Optional[float] = None
     open_interest_change_1h: Optional[float] = None
     strategy_thresholds: Dict[str, float] = Field(default_factory=dict)
 
@@ -30,6 +31,7 @@ class MarketSnapshot(BaseModel):
     payload_hashes: Dict[str, str] = Field(default_factory=dict)
     available_time: Optional[str] = None
     received_time: Optional[str] = None
+    data_errors: Dict[str, str] = Field(default_factory=dict)
 
 
 class EvidenceBundle(BaseModel):

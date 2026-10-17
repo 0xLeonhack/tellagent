@@ -1,8 +1,32 @@
 from tellagent.memory import JsonlMemory
-from tellagent.research import process_snapshot, run_research
+from tellagent.research import _event_is_open, process_snapshot, run_research
 from tellagent.schemas import MarketReport
 from tellagent.renderer import render_reports
 from helpers import market_snapshot
+
+
+class _StubLedger:
+    def __init__(self, decisions):
+        self._decisions = decisions
+
+    def gate_decisions(self, asset=None):
+        return self._decisions
+
+
+def test_event_stays_open_across_silent_frames():
+    decisions = [
+        {"action": "open_event", "event_key": "BTC:quiet"},
+        {"action": "silent", "event_key": "BTC:quiet"},
+    ]
+    ledger = _StubLedger(decisions)
+
+    assert _event_is_open(ledger, "BTC", "quiet")
+    assert not _event_is_open(ledger, "BTC", "conflicting")
+
+    decisions.append({"action": "open_event", "event_key": "BTC:conflicting"})
+    # A newer event supersedes the old one.
+    assert not _event_is_open(ledger, "BTC", "quiet")
+    assert _event_is_open(ledger, "BTC", "conflicting")
 
 
 def test_research_pipeline_calls_report_generator_for_significant_judgment(tmp_path):

@@ -58,13 +58,16 @@ Agent 也不是事实来源：它不计算指标、不抓数据、不下单，�
 
 - `data.py` 只处理真实公共 API，以及进程内滚动采样（不落库）；
 - `metrics.py` 只做确定性计算；
+- `scoring.py` 只做证据构造、状态 logits、softmax 和置信度计算，是 Observer 的唯一打分来源；
 - `observer.py` 提供本地规则 Observer 和可替换远程 Jev Provider；
-- `gate.py` 提供 `evaluate_gate` 和 `should_investigate`；
+- `gate.py` 提供带确认、材料性、数据不足恢复和事件生命周期的 `evaluate_gate`；
+- `audit.py` 独立重算帧、概率和判断，并可联网重算指标，不信任流水线记账；
+- `evaluation.py` 获取公开历史数据做分布/前向检验，并在同一批实盘判断上对照旧/新 Gate；
 - `analyst.py` 只保留远程强 Analyst；
 - `memory.py` 使用 append-only JSONL；
 - `research.py` 是唯一的循环编排入口，并承载对已记录帧的回放（`replay_recorded_frames`）；
 - `renderer.py` 只负责 Rich 输出；
-- `cli.py` 暴露 `research`、`agent`、`replay`、`agent-stats` 四个命令，不包含研究逻辑；
+- `cli.py` 暴露 `research`、`agent`、`replay`、`agent-stats`、`audit`、`evaluate` 六个命令，不包含研究逻辑；
 - `agent_schemas.py` 只定义契约：动作白名单、`AgentAction`、`AgentTrace`、`AgentRunSummary`、`AgentStats`；
 - `agent_loop.py` 是唯一的有界循环：步数预算、工具执行、上下文回灌，不含任何研究判断；
 - `tools.py`、`agent_tools.py` 只做静态工具注册与账本读写映射，工具没有交易、Shell、Python、网络出口；
@@ -118,6 +121,8 @@ uv run python -m tellagent research --cycles 1 --analyst none
 uv run pytest
 uv run python -m tellagent research --cycles 1 --analyst none
 uv run python -m tellagent agent --cycles 1 --analyst none
+uv run python -m tellagent audit --limit 50
+uv run python -m tellagent evaluate --days 30 --asset BTC
 ```
 
 ## 提交标准

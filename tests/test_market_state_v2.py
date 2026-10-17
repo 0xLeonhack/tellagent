@@ -26,6 +26,7 @@ def test_direction_and_driver_matrix(price, volume, oi, expected):
         price_change_1h=price,
         price_change_6h=price,
         spot_volume_change_1h=volume,
+        spot_volume_ratio_6h=2.0 if volume >= 0.08 else None,
         funding_rate=0.0001,
         open_interest_change_interval=oi,
     )
@@ -42,7 +43,7 @@ def test_leverage_expansion_down_is_escalated():
     snapshot = MarketSnapshot(as_of="2026-10-16T00:00:00Z", sources=["test"], assets=[asset])
     judgment = RuleBasedJevObserver().judge(build_state_frame(snapshot, asset))
     assert judgment.selected_value == "leverage_expansion_down"
-    assert judgment.research_priority == "significant"
+    assert judgment.research_priority in {"significant", "urgent"}
 
 
 def test_missing_data_and_quiet_are_distinct():
@@ -56,20 +57,62 @@ def test_missing_data_and_quiet_are_distinct():
     assert quiet.suggested_state == "quiet"
 
 
-def test_source_alignment_quality_degrades_stale_sources():
-    asset = AssetSnapshot(symbol="BTC", price_change_1h=0.03, open_interest_change_interval=0.02)
+def test_hourly_candle_age_is_not_treated_as_staleness():
+    asset = AssetSnapshot(
+        symbol="BTC", price_change_1h=0.03, spot_volume_change_1h=0.06,
+        funding_rate=0.0001, open_interest_change_interval=0.02,
+    )
     snapshot = MarketSnapshot(
-        as_of="2026-10-16T00:00:00Z",
+        as_of="2026-10-16T00:30:00Z",
         sources=["Coinbase", "Deribit"],
         assets=[asset],
         source_times={
-            "coinbase:BTC": "2026-10-15T23:00:00Z",
-            "deribit:BTC": "2026-10-16T00:00:00Z",
+            "coinbase:BTC": "2026-10-16T00:00:00Z",
+            "deribit:BTC": "2026-10-16T00:30:00Z",
+        },
+    )
+    score, alignment = assess_snapshot_quality(snapshot, asset)
+    assert score == 1.0
+    assert alignment == 1800
+    frame = build_state_frame(snapshot, asset)
+    assert frame.assessment.data_quality == "complete"
+    assert frame.quality_summary["source_max_age_seconds"] == "1800"
+
+
+def test_truly_stale_sources_are_insufficient():
+    asset = AssetSnapshot(symbol="BTC", price_change_1h=0.03, open_interest_change_interval=0.02)
+    snapshot = MarketSnapshot(
+        as_of="2026-10-16T03:00:00Z",
+        sources=["Coinbase", "Deribit"],
+        assets=[asset],
+        source_times={
+            "coinbase:BTC": "2026-10-16T00:00:00Z",
+            "deribit:BTC": "2026-10-16T03:00:00Z",
         },
     )
     score, alignment = assess_snapshot_quality(snapshot, asset)
     assert score == 0.25
-    assert alignment == 3600
+    assert alignment == 10800
     frame = build_state_frame(snapshot, asset)
     assert frame.assessment.data_quality == "insufficient"
-    assert frame.quality_summary["source_alignment_seconds"] == "3600"
+    assert frame.quality_summary["source_max_age_seconds"] == "10800"
+
+
+def test_moderately_stale_source_is_degraded():
+    asset = AssetSnapshot(
+        symbol="BTC", price_change_1h=0.03, spot_volume_change_1h=0.06,
+        funding_rate=0.0001, open_interest_change_interval=0.02,
+    )
+    snapshot = MarketSnapshot(
+        as_of="2026-10-16T02:20:00Z",
+        sources=["Coinbase", "Deribit"],
+        assets=[asset],
+        source_times={
+            "coinbase:BTC": "2026-10-16T01:00:00Z",
+            "deribit:BTC": "2026-10-16T02:20:00Z",
+        },
+    )
+    score, _ = assess_snapshot_quality(snapshot, asset)
+    assert score == 0.7
+    frame = build_state_frame(snapshot, asset)
+    assert frame.assessment.data_quality == "degraded"

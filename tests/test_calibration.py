@@ -45,7 +45,7 @@ def test_feature_baseline_is_not_ready_with_low_coverage():
 
 def test_asset_uses_ready_calibrated_thresholds():
     asset = AssetSnapshot(
-        symbol="ETH", price_change_1h=0.01, spot_volume_change_1h=0.03,
+        symbol="ETH", price_change_1h=0.01, spot_volume_change_1h=0.03, spot_volume_ratio_6h=2.0,
         open_interest_change_interval=0.001,
         strategy_thresholds={
             "price_change_1h": 0.005,

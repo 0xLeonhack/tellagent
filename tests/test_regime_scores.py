@@ -4,7 +4,7 @@ from tellagent.schemas import AssetSnapshot
 
 def test_mixed_participation_keeps_secondary_regime_scores():
     assessment = assess_market(AssetSnapshot(
-        symbol="BTC", price_change_1h=0.04, spot_volume_change_1h=0.09,
+        symbol="BTC", price_change_1h=0.04, spot_volume_change_1h=0.09, spot_volume_ratio_6h=2.0,
         funding_rate=0.0003, open_interest_change_interval=0.03,
     ))
     assert assessment.regime == "broad_participation_up"

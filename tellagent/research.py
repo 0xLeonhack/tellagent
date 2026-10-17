@@ -89,15 +89,20 @@ def process_snapshot(
         guidance = build_research_guidance(judgment)
         if ledger:
             ledger.append_judgment(judgment)
-        gate_decision = evaluate_gate(
-            judgment, previous, event_open=previous is not None, trend=trend
+        event_open = (
+            _event_is_open(ledger, item.symbol, judgment.selected_value)
+            if ledger
+            else previous is not None and previous.selected_value == judgment.selected_value
         )
+        gate_decision = evaluate_gate(judgment, previous, event_open=event_open, trend=trend)
         investigate = gate_decision.action in {"open_event", "update_event"}
         gate_reason = gate_decision.reason
+        bypassed = False
         if always_investigate and agent_runner is not None:
             # Evaluation switch: skip the Gate cooldown so every frame reaches the
             # Agent. The Agent still decides on its own whether to report.
             investigate = True
+            bypassed = True
             gate_reason = "gate bypassed: every frame is handed to the Agent"
         report = None
         agent_run = None
@@ -127,6 +132,14 @@ def process_snapshot(
                 report = contextual_report_generator(snapshot, item, judgment, related_context)
             elif report_generator:
                 report = report_generator(snapshot, item)
+        if ledger:
+            ledger.append_gate_decision(
+                gate_decision,
+                item.symbol,
+                judgment.as_of,
+                investigated=investigate,
+                bypassed=bypassed,
+            )
         summary = report.headline if report else "{}: {}".format(judgment.selected_value, judgment.research_priority)
         memory_record = None
         if investigate:
@@ -238,6 +251,21 @@ def snapshot_from_record(record: FrameLedgerRecord) -> MarketSnapshot:
         available_time=record.available_time,
         received_time=record.received_time,
     )
+
+
+def _event_is_open(ledger: JsonlLedger, asset: str, state: str) -> bool:
+    """Whether this exact event is the one the Gate last acted on.
+
+    Silent decisions do not close an event: they mean "nothing new to do", not
+    "the event ended". Looking past them keeps an ongoing event as
+    ``update_event`` instead of alternating open/update whenever a quiet frame
+    happens in between.
+    """
+    decisions = ledger.gate_decisions(asset)
+    for decision in reversed(decisions):
+        if decision.get("action") in {"open_event", "update_event"}:
+            return decision.get("event_key") == "{}:{}".format(asset, state)
+    return False
 
 
 def _latest_judgment(records: List[MemoryRecord], asset: str) -> Optional[ContinuousJudgment]:

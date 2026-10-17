@@ -7,6 +7,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .agent_schemas import AgentRunSummary, AgentStats
+from .audit import AuditReport
 from .research import ResearchOutcome
 from .schemas import MarketReport
 
@@ -80,6 +81,155 @@ def render_agent_stats(stats: AgentStats, console: Console = None) -> None:
     _add_counts_row(distributions, "工具", stats.tool_counts)
     _add_counts_row(distributions, "终止方式", stats.terminal_counts)
     console.print(distributions)
+
+
+def render_audit(report: AuditReport, console: Console = None) -> None:
+    console = console or Console()
+    console.print()
+    console.rule("[bold cyan]tellagent[/bold cyan]  数据与判断审计", style="cyan")
+    console.print("[dim]独立重算 · 不信任流水线自己的记账[/dim]")
+
+    table = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False)
+    table.add_column("结果", width=4, justify="center")
+    table.add_column("检查", width=24)
+    table.add_column("详情", ratio=1, overflow="fold")
+    for check in report.checks:
+        table.add_row(
+            Text("通过" if check.ok else "失败", style="green" if check.ok else "bold red"),
+            check.name,
+            Text(check.detail),
+        )
+    console.print(table)
+
+    summary = Table.grid(expand=True, padding=(0, 1))
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=2)
+    reproduced = str(report.reproduced)
+    if report.legacy_checked:
+        reproduced += "（历史版本 {}）".format(report.legacy_checked)
+    summary.add_row(
+        _stat("帧", str(report.frames)),
+        _stat("判断", str(report.judgments)),
+        _stat("精确复现", reproduced),
+        _stat(
+            "结论",
+            "全部通过" if report.ok else "存在问题",
+            "green" if report.ok else "bold red",
+        ),
+    )
+    console.print(Panel(summary, border_style="green" if report.ok else "red", box=box.ROUNDED))
+
+
+def render_evaluation(history: list, live: list, console: Console = None) -> None:
+    console = console or Console()
+    console.print()
+    console.rule("[bold cyan]tellagent[/bold cyan]  经验校准与 Gate 对照", style="cyan")
+    console.print("[dim]真实公开数据 · 历史 OI 不可得，因此不做全状态回测[/dim]")
+
+    if history:
+        table = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False)
+        table.add_column("资产", width=6)
+        table.add_column("小时数", justify="right")
+        table.add_column("|1h 涨跌| p50 / p90", justify="right")
+        table.add_column("|量变| p50 / p90", justify="right")
+        table.add_column("量比 p90", justify="right")
+        table.add_column("|Funding| p90", justify="right")
+        for report in history:
+            table.add_row(
+                report["symbol"],
+                str(report["hours"]),
+                _pct_pair(report["price_abs"], "p50", "p90"),
+                _pct_pair(report["volume_abs"], "p50", "p90", digits=0),
+                "{:.2f}x".format(report["volume_ratio"]["p90"] or 0),
+                "{:.4%}".format(report["funding_abs"]["p90"] or 0),
+            )
+        console.print(Panel(table, title="特征分布（30 天）", border_style="cyan", box=box.ROUNDED))
+
+        info = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False)
+        info.add_column("资产", width=6)
+        info.add_column("大涨跌后 3h 波动", justify="right")
+        info.add_column("平静后 3h 波动", justify="right")
+        info.add_column("3h 延续率", justify="right")
+        info.add_column("量确认后 3h 波动", justify="right")
+        info.add_column("量未确认后 3h 波动", justify="right")
+        info.add_column("Funding 极端后 8h 收益", justify="right")
+        for report in history:
+            info.add_row(
+                report["symbol"],
+                _pct(report["forward_abs_3h_after_large"]),
+                _pct(report["forward_abs_3h_after_quiet"]),
+                _pct(report["continuation_after_large"], signed=False),
+                _pct(report["forward_abs_3h_confirmed"]),
+                _pct(report["forward_abs_3h_unconfirmed"]),
+                _pct(report["funding_extreme_forward_8h"], signed=True),
+            )
+        console.print(Panel(info, title="前向信息检验", border_style="cyan", box=box.ROUNDED))
+
+        thresholds = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False)
+        thresholds.add_column("资产", width=6)
+        thresholds.add_column("价格阈值 建议 / 当前", justify="right")
+        thresholds.add_column("量变阈值 建议 / 当前", justify="right")
+        thresholds.add_column("Funding 极端 建议 / 当前", justify="right")
+        for report in history:
+            thresholds.add_row(
+                report["symbol"],
+                _threshold_pair(report, "price_change_1h", percent=True),
+                _threshold_pair(report, "spot_volume_change_1h", percent=True),
+                _threshold_pair(report, "funding_extreme", percent=False),
+            )
+        console.print(Panel(thresholds, title="样本 p90 与当前默认值", border_style="bright_black", box=box.ROUNDED))
+
+    if live:
+        table = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False)
+        table.add_column("资产", width=6)
+        table.add_column("判断数", justify="right")
+        table.add_column("平均 Top 分数", justify="right")
+        table.add_column("平均熵", justify="right")
+        table.add_column("平均置信", justify="right")
+        table.add_column("单帧翻转率", justify="right")
+        table.add_column("旧 Gate 升级", justify="right")
+        table.add_column("新 Gate 升级", justify="right")
+        table.add_column("旧 Gate 误报", justify="right")
+        table.add_column("新 Gate 误报", justify="right")
+        for report in live:
+            table.add_row(
+                report["asset"],
+                str(report["judgments"]),
+                _pct(report["mean_top_probability"], signed=False),
+                "{:.2f}".format(report["mean_entropy"] or 0),
+                _pct(report["mean_confidence"], signed=False),
+                _pct(report["one_frame_flip_rate"], signed=False),
+                str(report["gate_v1_escalations"]),
+                str(report["gate_v2_escalations"]),
+                str(report["gate_v1_escalations_not_persisting"]),
+                str(report["gate_v2_escalations_not_persisting"]),
+            )
+        console.print(Panel(table, title="实盘判断与 Gate 对照", border_style="cyan", box=box.ROUNDED))
+
+
+def _pct(value, signed=False) -> str:
+    if value is None:
+        return "缺失"
+    return ("{:+.2%}" if signed else "{:.2%}").format(value)
+
+
+def _pct_pair(values, first, second, digits=2) -> str:
+    left, right = values.get(first), values.get(second)
+    if left is None or right is None:
+        return "缺失"
+    return ("{:.2f}% / {:.2f}%").format(left * 100, right * 100)
+
+
+def _threshold_pair(report, name, percent) -> str:
+    suggested = report["suggested"].get(name)
+    current = report["current"].get(name)
+    if suggested is None:
+        return "缺失 / {}".format(_pct(current, signed=False) if percent else "{:.5f}".format(current))
+    if percent:
+        return "{:.2%} / {:.2%}".format(suggested, current)
+    return "{:.5%} / {:.5%}".format(suggested, current)
 
 
 def _print_outcome(console: Console, outcome: ResearchOutcome) -> None:

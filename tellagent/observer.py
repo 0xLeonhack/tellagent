@@ -2,30 +2,19 @@ import json
 import os
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Dict, List, Protocol
+from typing import Dict, List, Optional, Protocol
 
 import httpx
 
-from .assessment import assess_market, assess_snapshot_quality
+from .assessment import (
+    assess_market,
+    assess_snapshot_quality,
+    assessment_evidence,
+    source_max_age_seconds,
+)
 from .metrics import REPORT_TEXT, analyze_asset
 from .schemas import AssetSnapshot, ContinuousJudgment, FeatureBaseline, MarketStateFrame, MarketSnapshot
-
-
-REGIMES = (
-    "quiet",
-    "spot_confirmed_up",
-    "spot_confirmed_down",
-    "leverage_expansion_up",
-    "leverage_expansion_down",
-    "position_unwind_up",
-    "position_unwind_down",
-    "broad_participation_up",
-    "broad_participation_down",
-    "unconfirmed_move_up",
-    "unconfirmed_move_down",
-    "conflicting",
-    "insufficient_data",
-)
+from .scoring import REGIMES, score_confidence
 
 
 class JudgmentProvider(Protocol):
@@ -35,16 +24,84 @@ class JudgmentProvider(Protocol):
     def judge(self, frame: MarketStateFrame) -> ContinuousJudgment: ...
 
 
+FRAME_FINGERPRINT_VERSION = "v2"
+FRAME_FINGERPRINT_FIELDS = (
+    "symbol",
+    "spot_price",
+    "price_change_1h",
+    "price_change_6h",
+    "realized_volatility_6h",
+    "spot_volume_change_1h",
+    "spot_volume_ratio_6h",
+    "funding_rate",
+    "open_interest",
+    "open_interest_change_interval",
+    "open_interest_interval_seconds",
+    "open_interest_change_1h",
+    "strategy_thresholds",
+)
+
+
+def frame_fingerprint(asset: AssetSnapshot, as_of: str) -> str:
+    """Stable content hash for a frame's evidence.
+
+    Only an explicit field list is hashed. Adding unrelated schema fields
+    later must not silently invalidate every historic frame id.
+    """
+    payload = {
+        "version": FRAME_FINGERPRINT_VERSION,
+        "as_of": as_of,
+        "asset": {name: getattr(asset, name) for name in FRAME_FINGERPRINT_FIELDS},
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return sha256(canonical.encode()).hexdigest()[:16]
+
+
+LEGACY_FINGERPRINT_FIELDS = {
+    "symbol",
+    "spot_price",
+    "price_change_1h",
+    "price_change_6h",
+    "realized_volatility_6h",
+    "spot_volume_change_1h",
+    "spot_volume_ratio_6h",
+    "funding_rate",
+    "open_interest",
+    "open_interest_change_interval",
+    "open_interest_change_1h",
+    "strategy_thresholds",
+}
+
+
+def legacy_frame_fingerprint(
+    asset: AssetSnapshot,
+    as_of: str,
+    fields: Optional[set[str]] = None,
+) -> str:
+    """The pre-v2 id formula, kept so old ledger frames stay auditable.
+
+    The original formula hashed ``asset.model_dump_json()`` with whatever
+    fields the schema had at that time. Fields added later (for example
+    ``realized_volatility_6h``) must not be included when recomputing an old
+    id, so callers that parsed an old record pass the exact field set that was
+    stored with it (``asset.model_fields_set``).
+    """
+    include = LEGACY_FINGERPRINT_FIELDS if fields is None else set(fields)
+    legacy_json = asset.model_dump_json(include=include)
+    return sha256(
+        "{}:{}:{}".format(asset.symbol, as_of, legacy_json).encode()
+    ).hexdigest()[:16]
+
+
 def build_state_frame(
     snapshot: MarketSnapshot,
     asset: AssetSnapshot,
     baseline_state: Dict[str, FeatureBaseline] | None = None,
 ) -> MarketStateFrame:
     quality_score, alignment_seconds = assess_snapshot_quality(snapshot, asset)
+    max_age_seconds = source_max_age_seconds(snapshot, asset)
     analysis = analyze_asset(asset, quality_score, alignment_seconds)
-    frame_id = sha256(
-        "{}:{}:{}".format(asset.symbol, snapshot.as_of, asset.model_dump_json()).encode()
-    ).hexdigest()[:16]
+    frame_id = frame_fingerprint(asset, snapshot.as_of)
     return MarketStateFrame(
         frame_id=frame_id,
         asset=asset.symbol,
@@ -59,6 +116,7 @@ def build_state_frame(
             "funding_rate": asset.funding_rate,
             "open_interest": asset.open_interest,
             "open_interest_change_interval": asset.open_interest_change_interval,
+            "open_interest_interval_seconds": asset.open_interest_interval_seconds,
             "open_interest_change_1h": asset.open_interest_change_1h,
         },
         anomalies=list(analysis.evidence.supporting),
@@ -69,6 +127,11 @@ def build_state_frame(
             "status": analysis.assessment.data_quality,
             "score": "{:.2f}".format(quality_score),
             "source_alignment_seconds": str(alignment_seconds) if alignment_seconds is not None else "unknown",
+            "source_max_age_seconds": str(max_age_seconds) if max_age_seconds is not None else "unknown",
+            "data_errors": "; ".join(
+                "{}: {}".format(symbol, message)
+                for symbol, message in sorted(snapshot.data_errors.items())
+            ) or "none",
         },
         baseline_state=baseline_state or {},
         strategy_thresholds=asset.strategy_thresholds,
@@ -80,18 +143,20 @@ class RuleBasedObserver:
     """Deterministic default Observer; Jev is an optional provider."""
 
     provider = "rule-based-observer"
-    model_version = "market-state-v2"
+    model_version = "market-state-v4"
 
     def judge(self, frame: MarketStateFrame) -> ContinuousJudgment:
         started = datetime.now(timezone.utc)
+        asset = _asset_from_frame(frame)
         assessment = frame.assessment or assess_market(
-            _asset_from_frame(frame),
+            asset,
             data_quality_score=float(frame.quality_summary.get("score", "1.0")),
             source_alignment_seconds=_safe_int(frame.quality_summary.get("source_alignment_seconds")),
         )
-        scores = _heuristic_scores(frame, assessment)
+        scores = _heuristic_scores(assessment)
+        evidence = assessment_evidence(asset, assessment)
         conflicts = _conflict_roles(assessment)
-        confidence = _heuristic_confidence(scores, assessment)
+        confidence = score_confidence(scores, evidence)
         now = datetime.now(timezone.utc)
         return ContinuousJudgment(
             frame_id=frame.frame_id,
@@ -104,7 +169,7 @@ class RuleBasedObserver:
             supporting_roles=_available_roles(frame),
             contradicting_roles=conflicts,
             missing_roles=list(frame.missing_inputs),
-            research_priority=_priority(assessment),
+            research_priority=_priority(assessment, evidence),
             invalidation_conditions=[REPORT_TEXT[assessment.regime][1]],
             provider=self.provider,
             model_version=self.model_version,
@@ -230,50 +295,23 @@ REGIME_CRITERIA = {
 }
 
 
-def _heuristic_scores(frame: MarketStateFrame, assessment) -> Dict[str, float]:
-    if assessment.regime_scores:
-        scores = dict(assessment.regime_scores)
-        total = sum(scores.values())
-        if total > 0:
-            normalized = {key: round(value / total, 4) for key, value in scores.items()}
-            selected = assessment.regime
-            normalized[selected] = round(normalized[selected] + (1.0 - sum(normalized.values())), 4)
-            return normalized
-    scores = {regime: 0.0 for regime in REGIMES}
-    selected = assessment.regime
-    price = abs(frame.price_state.get("change_1h") or 0.0)
-    oi, oi_threshold = _frame_oi_signal(frame)
-    volume = max(frame.spot_state.get("volume_change_1h") or 0.0, 0.0)
-    price_threshold = frame.strategy_thresholds.get("price_change_1h", 0.02)
-    volume_threshold = frame.strategy_thresholds.get("spot_volume_change_1h", 0.05)
-    strength = 0.45
-    strength += 0.1 * min(price / max(price_threshold, 1e-9), 2) / 2
-    if oi is not None:
-        strength += 0.1 * min(abs(oi) / max(oi_threshold, 1e-9), 2) / 2
-    strength += 0.1 * min(volume / max(volume_threshold, 1e-9), 2) / 2
-    if selected == "quiet":
-        strength = 0.75
-    elif selected == "insufficient_data":
-        strength = 0.65
-    elif selected == "conflicting":
-        strength = max(strength, 0.65)
-    selected_score = round(min(strength, 0.9), 4)
-    remainder = (1 - selected_score) / (len(REGIMES) - 1)
-    for regime in REGIMES:
-        scores[regime] = selected_score if regime == selected else round(remainder, 4)
-    correction = round(1 - sum(scores.values()), 4)
-    scores[selected] = round(scores[selected] + correction, 4)
-    return scores
+def _heuristic_scores(assessment) -> Dict[str, float]:
+    """Return the evidence distribution produced with the assessment.
 
-
-def _heuristic_confidence(scores: Dict[str, float], assessment) -> float:
-    ranked = sorted(scores.values(), reverse=True)
-    top = ranked[0] if ranked else 0.0
-    runner_up = ranked[1] if len(ranked) > 1 else 0.0
-    margin = max(0.0, top - runner_up)
-    quality_factor = {"complete": 1.0, "degraded": 0.8, "insufficient": 0.5}[assessment.data_quality]
-    conflict_factor = 0.75 if assessment.alignment == "conflicting" else 1.0
-    return round(min(0.95, (0.55 + 0.35 * margin) * quality_factor * conflict_factor), 4)
+    ``assess_market`` always fills ``regime_scores`` with a softmax over all
+    regimes. The normalisation below only guards rows written by older
+    versions, which could contain an unnormalised or one-hot vector.
+    """
+    scores = {regime: float(assessment.regime_scores.get(regime, 0.0)) for regime in REGIMES}
+    total = sum(scores.values())
+    if total <= 0:
+        scores[assessment.regime] = 1.0
+        return scores
+    normalized = {regime: round(value / total, 6) for regime, value in scores.items()}
+    drift = round(1.0 - sum(normalized.values()), 6)
+    if drift:
+        normalized[assessment.regime] = round(normalized[assessment.regime] + drift, 6)
+    return normalized
 
 
 def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:
@@ -287,6 +325,7 @@ def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:
         funding_rate=frame.leverage_state.get("funding_rate"),
         open_interest=frame.leverage_state.get("open_interest"),
         open_interest_change_interval=frame.leverage_state.get("open_interest_change_interval"),
+        open_interest_interval_seconds=frame.leverage_state.get("open_interest_interval_seconds"),
         open_interest_change_1h=frame.leverage_state.get("open_interest_change_1h"),
         strategy_thresholds=frame.strategy_thresholds,
     )
@@ -301,36 +340,39 @@ def _safe_int(value: str | None) -> int | None:
         return None
 
 
-def _frame_oi_signal(frame: MarketStateFrame) -> tuple[float | None, float]:
-    one_hour = frame.leverage_state.get("open_interest_change_1h")
-    if one_hour is not None:
-        return one_hour, 0.08
-    return (
-        frame.leverage_state.get("open_interest_change_interval"),
-        frame.strategy_thresholds.get("oi_interval", 0.015),
-    )
+def _priority(assessment, evidence) -> str:
+    """Map a regime and its risk flags to research urgency.
 
-
-def _priority(assessment) -> str:
-    if assessment.regime == "quiet":
+    The mapping stays deterministic and coarse on purpose: the Gate adds
+    confirmation and materiality, so priority itself should not be noisy.
+    """
+    regime = assessment.regime
+    shock = assessment.price_strength == "shock"
+    # "Urgent" is reserved for moves at least 2.5x the calibrated threshold;
+    # otherwise almost every shock would outrank the truly extreme frames.
+    extreme = abs(evidence.price_z) >= 2.5
+    crowded = assessment.funding_state in {"long_crowded", "short_crowded"}
+    divergence = "spot_leverage_divergence" in assessment.risk_flags
+    if regime == "quiet":
         return "silent"
-    if assessment.regime == "insufficient_data":
-        return "watch" if assessment.price_strength == "shock" else "silent"
-    if assessment.regime == "conflicting":
-        return "significant" if assessment.price_strength == "shock" else "watch"
-    if assessment.regime == "leverage_expansion_down":
-        return "significant"
-    if assessment.regime.startswith("leverage_expansion"):
-        return "significant" if (
-            "spot_leverage_divergence" in assessment.risk_flags
-            or assessment.funding_state != "neutral"
-        ) else "watch"
-    if assessment.regime.startswith("position_unwind"):
-        return "significant" if assessment.price_strength == "shock" else "watch"
-    if assessment.regime == "broad_participation_down":
-        return "significant"
-    if assessment.regime.startswith("unconfirmed_move"):
-        return "significant" if assessment.price_strength == "shock" else "watch"
+    if regime == "insufficient_data":
+        return "watch" if shock else "silent"
+    if regime == "conflicting":
+        return "significant" if shock or crowded else "watch"
+    if regime == "leverage_expansion_down":
+        return "urgent" if extreme and crowded else "significant"
+    if regime.startswith("leverage_expansion"):
+        return "significant" if divergence or crowded or shock else "watch"
+    if regime.startswith("position_unwind"):
+        return "significant" if shock or crowded else "watch"
+    if regime == "broad_participation_down":
+        return "urgent" if extreme and crowded else "significant"
+    if regime.startswith("broad_participation"):
+        return "significant" if shock else "watch"
+    if regime.startswith("unconfirmed_move"):
+        return "significant" if shock or crowded else "watch"
+    if regime.startswith("spot_confirmed"):
+        return "significant" if shock else "watch"
     return "watch"
 
 

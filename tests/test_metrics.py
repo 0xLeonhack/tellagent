@@ -28,6 +28,7 @@ def test_spot_confirmed_scene():
         symbol="BTC",
         price_change_1h=0.028,
         spot_volume_change_1h=0.09,
+        spot_volume_ratio_6h=2.0,
         funding_rate=0.00008,
         open_interest_change_1h=0.04,
     ))
@@ -41,6 +42,7 @@ def test_high_funding_is_counter_evidence_for_spot_confirmation():
         price_change_1h=0.028,
         price_change_6h=0.04,
         spot_volume_change_1h=0.09,
+        spot_volume_ratio_6h=2.0,
         funding_rate=0.0003,
         open_interest_change_1h=0.04,
     ))
@@ -53,6 +55,7 @@ def test_spot_confirmation_requires_oi_data():
         symbol="BTC",
         price_change_1h=0.028,
         spot_volume_change_1h=0.09,
+        spot_volume_ratio_6h=2.0,
         funding_rate=0.00008,
     ))
     assert result.suggested_state == "insufficient_data"

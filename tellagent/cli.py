@@ -1,7 +1,9 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import typer
 
 from .config import load_project_env
@@ -13,13 +15,15 @@ from .agent_provider import RemoteAgentConfig, RemoteAgentProvider
 from .agent_research import AgentRequest, AgentResearchRunner
 from .agent_trace import JsonlAgentTraceStore
 from .analyst import RemoteAnalystConfig, generate_remote_report
+from .audit import AuditReport, audit_ledger, audit_live
 from .data import RollingLiveLoader
+from .evaluation import evaluate_ledger, fetch_history, summarize_history
 from .factors import JsonlFactorStore
 from .ledger import JsonlLedger
 from .memory import JsonlMemory
 from .metrics import build_deterministic_report
 from .observer import RemoteJevObserver, RuleBasedObserver
-from .renderer import render_agent_stats, render_reports
+from .renderer import render_agent_stats, render_audit, render_evaluation, render_reports
 from .research import replay_recorded_frames, run_research
 from .review import OutcomeReviewer
 
@@ -56,7 +60,7 @@ def research(
     """Workflow mode: collect real data, gate it, then call the strong analyst."""
     try:
         _validate(analyst=analyst, provider=provider)
-        pipeline = _build_pipeline(memory_path, timeout, provider)
+        pipeline = _build_pipeline(memory_path, timeout, provider, interval)
         contextual_generator, report_generator = _workflow_generators(analyst)
         run_research(
             pipeline.live_loader,
@@ -100,7 +104,7 @@ def agent(
     """Agent mode: Observer → Gate → Agent actions → tools → report → trace."""
     try:
         _validate(analyst=analyst, provider=provider, agent_provider=agent_provider)
-        pipeline = _build_pipeline(memory_path, timeout, provider)
+        pipeline = _build_pipeline(memory_path, timeout, provider, interval)
         runner = _build_agent_runner(
             memory_path, analyst, agent_provider, agent_steps, pipeline.factor_store
         )
@@ -164,6 +168,56 @@ def replay(
 
 
 @app.command()
+def audit(
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only audit one asset, e.g. ETH."),
+    limit: int = typer.Option(50, "--limit", min=1, help="Verify the most recent N frames."),
+    live: bool = typer.Option(
+        False, "--live", help="Also refetch public data and independently recompute every metric."
+    ),
+    timeout: float = typer.Option(8.0, "--timeout", min=1.0, help="Public API timeout in seconds."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+) -> None:
+    """Verify that recorded data and judgments are real and reproducible."""
+    report = audit_ledger(memory_path.parent, asset=asset, limit=limit)
+    if live:
+        checks = list(report.checks) + audit_live(
+            asset, timeout, root=memory_path.parent, limit=limit
+        )
+        report = AuditReport(
+            checks=checks,
+            frames=report.frames,
+            judgments=report.judgments,
+            reproduced=report.reproduced,
+            legacy_checked=report.legacy_checked,
+        )
+    render_audit(report)
+    if not report.ok:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def evaluate(
+    days: int = typer.Option(30, "--days", min=7, max=90, help="Days of hourly history."),
+    asset: Optional[str] = typer.Option(None, "--asset", help="Only evaluate one asset, e.g. BTC."),
+    memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
+    json_path: Optional[Path] = typer.Option(None, "--json", help="Write the raw measurements as JSON."),
+) -> None:
+    """Measure real feature distributions and compare the old and new Gate."""
+    symbols = [asset.upper()] if asset else ["BTC", "ETH"]
+    history = []
+    try:
+        for symbol in symbols:
+            rows = fetch_history(symbol, days=days)
+            history.append(summarize_history(symbol, rows))
+    except (httpx.HTTPError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    live = [evaluate_ledger(memory_path.parent, symbol) for symbol in symbols]
+    render_evaluation(history, live)
+    if json_path:
+        json_path.write_text(json.dumps({"history": history, "live": live}, indent=2), encoding="utf-8")
+
+
+@app.command()
 def agent_stats(
     asset: Optional[str] = typer.Option(None, "--asset", help="Only summarize one asset."),
     memory_path: Path = typer.Option(Path(".tellagent/memory.jsonl"), "--memory-path"),
@@ -185,15 +239,23 @@ def _validate(
         raise ValueError("--agent-provider must be rule or remote.")
 
 
-def _build_pipeline(memory_path: Path, timeout: float, provider: str) -> _Pipeline:
+def _build_pipeline(
+    memory_path: Path,
+    timeout: float,
+    provider: str,
+    interval: float = 300.0,
+) -> _Pipeline:
     observer = RuleBasedObserver() if provider == "rule" else RemoteJevObserver.from_env()
     memory = JsonlMemory(memory_path)
     ledger = JsonlLedger(memory_path.parent)
     previous_open_interest = {}
+    previous_sampled_at = {}
     for frame_record in ledger.frames():
+        symbol = frame_record.asset_snapshot.symbol
         value = frame_record.asset_snapshot.open_interest
         if value is not None:
-            previous_open_interest[frame_record.asset_snapshot.symbol] = value
+            previous_open_interest[symbol] = value
+            previous_sampled_at[symbol] = frame_record.frame.as_of
     return _Pipeline(
         observer=observer,
         memory=memory,
@@ -203,6 +265,8 @@ def _build_pipeline(memory_path: Path, timeout: float, provider: str) -> _Pipeli
         live_loader=RollingLiveLoader(
             timeout=timeout,
             previous_open_interest=previous_open_interest,
+            previous_sampled_at=previous_sampled_at,
+            max_sample_gap_seconds=max(interval * 3, 600.0),
         ),
     )
 

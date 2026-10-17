@@ -41,6 +41,28 @@ def test_live_adapter_normalizes_public_responses():
     assert snapshot.available_time
 
 
+def test_one_asset_failure_does_not_drop_the_other_asset():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "BTC-USD" in str(request.url):
+            return httpx.Response(500, json={"error": "boom"})
+        if request.url.host == "api.exchange.coinbase.com":
+            return httpx.Response(200, json=[
+                [index * 3600, "1", "1", "1", str(100 + index), "10"]
+                for index in range(7)
+            ])
+        return httpx.Response(200, json={"result": {
+            "current_funding": 0.0001, "open_interest": 1000, "timestamp": 25200000,
+        }})
+
+    snapshot = load_live_snapshot(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        now=datetime.fromtimestamp(27000, timezone.utc),
+    )
+    assert [asset.symbol for asset in snapshot.assets] == ["ETH"]
+    assert "BTC" in snapshot.data_errors
+    assert "ETH" not in snapshot.data_errors
+
+
 def test_live_adapter_rejects_short_candle_history():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[[100, "1", "1", "1", "1", "1"]])
@@ -115,3 +137,37 @@ def test_rolling_loader_can_restore_previous_oi_baseline(monkeypatch):
     monkeypatch.setattr("tellagent.data.load_live_snapshot", snapshot)
     loader = RollingLiveLoader(previous_open_interest={"BTC": 1000.0})
     assert loader().assets[0].open_interest_change_interval == pytest.approx(0.02)
+
+
+def test_rolling_loader_uses_change_when_previous_sample_is_recent(monkeypatch):
+    def snapshot(timeout):
+        return MarketSnapshot(
+            as_of="2026-10-08T00:05:00Z",
+            sources=["Deribit"],
+            assets=[AssetSnapshot(symbol="BTC", open_interest=1020.0)],
+        )
+
+    monkeypatch.setattr("tellagent.data.load_live_snapshot", snapshot)
+    loader = RollingLiveLoader(
+        previous_open_interest={"BTC": 1000.0},
+        previous_sampled_at={"BTC": "2026-10-08T00:00:00Z"},
+        max_sample_gap_seconds=900,
+    )
+    assert loader().assets[0].open_interest_change_interval == pytest.approx(0.02)
+
+
+def test_rolling_loader_skips_oi_change_after_long_gap(monkeypatch):
+    def snapshot(timeout):
+        return MarketSnapshot(
+            as_of="2026-10-08T02:00:00Z",
+            sources=["Deribit"],
+            assets=[AssetSnapshot(symbol="BTC", open_interest=1020.0)],
+        )
+
+    monkeypatch.setattr("tellagent.data.load_live_snapshot", snapshot)
+    loader = RollingLiveLoader(
+        previous_open_interest={"BTC": 1000.0},
+        previous_sampled_at={"BTC": "2026-10-08T00:00:00Z"},
+        max_sample_gap_seconds=900,
+    )
+    assert loader().assets[0].open_interest_change_interval is None

@@ -1,7 +1,9 @@
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
+from .gate import GateDecision
 from .schemas import (
     AssetSnapshot,
     ContinuousJudgment,
@@ -40,6 +42,51 @@ class JsonlLedger:
 
     def append_judgment(self, judgment: ContinuousJudgment) -> None:
         self._append("judgments", judgment.as_of, judgment.model_dump_json())
+
+    def append_gate_decision(
+        self,
+        decision: GateDecision,
+        asset: str,
+        as_of: str,
+        investigated: bool,
+        bypassed: bool = False,
+    ) -> None:
+        """Record why a frame did or did not reach the strong analyst/Agent.
+
+        The gate is the cost/attention boundary, so its decisions are part of
+        the research record; without them silent frames are indistinguishable
+        from a pipeline that stopped running.
+        """
+        payload = {
+            "as_of": as_of,
+            "asset": asset.upper(),
+            "action": decision.action,
+            "event_key": decision.event_key,
+            "reason": decision.reason,
+            "probability_delta": decision.probability_delta,
+            "triggers": decision.triggers,
+            "investigated": investigated,
+            "bypassed": bypassed,
+        }
+        self._append(
+            "gate_decisions",
+            as_of,
+            json.dumps(payload, sort_keys=True, ensure_ascii=True),
+        )
+
+    def gate_decisions(self, asset: Optional[str] = None) -> List[dict]:
+        records: List[dict] = []
+        directory = self.root / "gate_decisions"
+        if not directory.exists():
+            return records
+        for path in sorted(directory.glob("*.jsonl")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if asset is None or str(record.get("asset", "")).upper() == asset.upper():
+                    records.append(record)
+        return records
 
     def judgments(self, asset: Optional[str] = None) -> List[ContinuousJudgment]:
         records: List[ContinuousJudgment] = []

@@ -6,4 +6,5 @@ __pycache__/
 *.py[cod]
 .env
 .tellagent/
+research-output/
 .DS_Store

@@ -26,21 +26,39 @@ def load_live_snapshot(
         assets = []
         source_times = {}
         payload_hashes = {}
+        data_errors = {}
         for symbol in ("BTC", "ETH"):
-            candles = _get_json(client, "{}/products/{}-USD/candles".format(COINBASE_API, symbol), {"granularity": 3600})
-            asset, metadata = _asset_from_sources(client, symbol, candles, collection_time)
+            try:
+                candles = _get_json(client, "{}/products/{}-USD/candles".format(COINBASE_API, symbol), {"granularity": 3600})
+                asset, metadata = _asset_from_sources(client, symbol, candles, collection_time)
+            except ValueError as exc:
+                # One asset's outage must not take down the other asset's frame.
+                data_errors[symbol] = str(exc)
+                continue
             assets.append(asset)
             source_times.update(metadata["source_times"])
             payload_hashes.update(metadata["payload_hashes"])
+        if not assets:
+            raise ValueError(
+                "Market data request failed for every asset: {}".format(
+                    "; ".join("{}: {}".format(symbol, message) for symbol, message in data_errors.items())
+                )
+            )
         received_time = _format_time(collection_time) if now is not None else _now()
+        # The frame's knowledge time must not precede any source timestamp.
+        # Exchange clocks can be a second ahead of ours; taking the maximum
+        # keeps the point-in-time contract true without hiding the skew in the
+        # source metadata.
+        as_of = max([received_time] + list(source_times.values()))
         return MarketSnapshot(
-            as_of=received_time,
+            as_of=as_of,
             sources=["Coinbase", "Deribit"],
             assets=assets,
             source_times=source_times,
             payload_hashes=payload_hashes,
-            available_time=received_time,
+            available_time=as_of,
             received_time=received_time,
+            data_errors=data_errors,
         )
     finally:
         if owns_client:
@@ -114,24 +132,51 @@ def _deribit_value(payload: object, symbol: str, *fields: str) -> Optional[float
 
 
 class RollingLiveLoader:
-    """Add real interval OI changes using only in-process previous samples."""
+    """Add real interval OI changes using only in-process previous samples.
 
-    def __init__(self, timeout: float = 8.0, previous_open_interest: Optional[Dict[str, float]] = None):
+    A change is only meaningful when the previous sample is recent. After a
+    restart, the ledger can restore an OI value from hours ago; comparing it
+    with the current value would produce a multi-hour change that is then
+    mistaken for a short-interval move. ``max_sample_gap_seconds`` prevents
+    that by leaving the change missing when the gap is too large.
+    """
+
+    def __init__(
+        self,
+        timeout: float = 8.0,
+        previous_open_interest: Optional[Dict[str, float]] = None,
+        previous_sampled_at: Optional[Dict[str, str]] = None,
+        max_sample_gap_seconds: float = 900.0,
+    ):
         self.timeout = timeout
         self.previous_open_interest: Dict[str, float] = previous_open_interest or {}
+        self.previous_sampled_at: Dict[str, str] = previous_sampled_at or {}
+        self.max_sample_gap_seconds = max_sample_gap_seconds
 
     def __call__(self) -> MarketSnapshot:
         snapshot = load_live_snapshot(timeout=self.timeout)
+        now = _parse_time(snapshot.as_of)
         enriched = []
         for asset in snapshot.assets:
             previous = self.previous_open_interest.get(asset.symbol)
+            previous_at = self.previous_sampled_at.get(asset.symbol)
             current = asset.open_interest
             change = None
+            elapsed = None
             if previous is not None and current is not None and previous != 0:
-                change = (current - previous) / previous
+                if previous_at is not None:
+                    elapsed = (now - _parse_time(previous_at)).total_seconds()
+                if elapsed is None or 0 <= elapsed <= self.max_sample_gap_seconds:
+                    change = (current - previous) / previous
             if current is not None:
                 self.previous_open_interest[asset.symbol] = current
-            enriched.append(asset.model_copy(update={"open_interest_change_interval": change}))
+                self.previous_sampled_at[asset.symbol] = snapshot.as_of
+            enriched.append(asset.model_copy(update={
+                "open_interest_change_interval": change,
+                # The sampling gap is part of the measurement: a 0.01% change
+                # over 60 seconds and over 5 minutes are not the same signal.
+                "open_interest_interval_seconds": elapsed if change is not None else None,
+            }))
         return snapshot.model_copy(update={"assets": enriched})
 
 
@@ -167,6 +212,10 @@ def _realized_volatility(closes: list[float]) -> Optional[float]:
         return None
     mean = sum(returns) / len(returns)
     return (sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)) ** 0.5
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _format_time(value: datetime) -> str:
