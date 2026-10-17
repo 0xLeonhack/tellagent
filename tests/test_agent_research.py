@@ -248,6 +248,8 @@ def test_replay_rebuilds_recorded_frames_without_rewriting_the_ledger(tmp_path: 
     outcome = outcomes[0]
     assert outcome.agent_run is not None
     assert outcome.agent_run.frame_id == ledger.frames()[0].record_id
+    assert outcome.judgment.frame_id == ledger.frames()[0].record_id
+    assert outcome.judgment.selected_value == ledger.judgments()[0].selected_value
     assert outcome.agent_run.actions == ["investigate", "generate_factor", "finish"]
     assert outcome.report is not None
     # The replay only adds a trace: facts and judgments are left untouched.

@@ -186,13 +186,18 @@ def replay_recorded_frames(
     for record in records:
         snapshot = snapshot_from_record(record)
         item = record.asset_snapshot
-        frame = build_state_frame(snapshot, item, record.frame.baseline_state)
+        # Replay must use the frozen frame exactly as recorded. Recomputing it
+        # could apply newer thresholds or source-alignment rules to old data.
+        frame = record.frame
         judgment_history = [
             item_judgment
             for item_judgment in ledger.judgments(frame.asset)
             if item_judgment.as_of < frame.as_of
         ]
-        judgment = observer.judge(frame)
+        recorded_judgments = [
+            item for item in ledger.judgments(frame.asset) if item.frame_id == frame.frame_id
+        ]
+        judgment = recorded_judgments[-1] if recorded_judgments else observer.judge(frame)
         trend = compute_judgment_trend(judgment, judgment_history)
         guidance = build_research_guidance(judgment)
         related_context = memory_summary(
