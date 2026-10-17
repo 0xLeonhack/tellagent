@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from hashlib import sha256
+from statistics import median
 from typing import Dict, Optional
 
 import httpx
@@ -67,6 +68,8 @@ def _asset_from_sources(
         previous_volume = float(previous[5])
         latest_volume = float(latest[5])
         six_hour_close = float(six_hours_ago[4])
+        closes = [float(candle[4]) for candle in window]
+        volumes = [float(candle[5]) for candle in window]
     except (IndexError, TypeError, ValueError) as exc:
         raise ValueError("Unexpected Coinbase candle format for {}".format(symbol)) from exc
     if previous_close == 0 or previous_volume == 0 or six_hour_close == 0:
@@ -77,7 +80,9 @@ def _asset_from_sources(
         spot_price=latest_close,
         price_change_1h=(latest_close - previous_close) / previous_close,
         price_change_6h=(latest_close - six_hour_close) / six_hour_close,
+        realized_volatility_6h=_realized_volatility(closes),
         spot_volume_change_1h=(latest_volume - previous_volume) / previous_volume,
+        spot_volume_ratio_6h=(latest_volume / median(volumes[:-1])) if median(volumes[:-1]) else None,
         funding_rate=_deribit_value(ticker, symbol, "current_funding", "funding_8h"),
         open_interest=_deribit_value(ticker, symbol, "open_interest"),
         open_interest_change_1h=None,
@@ -152,6 +157,16 @@ def _validate_hourly_continuity(candles: list, symbol: str) -> None:
     timestamps = [float(candle[0]) for candle in candles]
     if any(right - left != 3600 for left, right in zip(timestamps, timestamps[1:])):
         raise ValueError("Coinbase returned non-contiguous hourly candles for {}".format(symbol))
+
+
+def _realized_volatility(closes: list[float]) -> Optional[float]:
+    if len(closes) < 3:
+        return None
+    returns = [current / previous - 1 for previous, current in zip(closes, closes[1:]) if previous]
+    if len(returns) < 2:
+        return None
+    mean = sum(returns) / len(returns)
+    return (sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)) ** 0.5
 
 
 def _format_time(value: datetime) -> str:

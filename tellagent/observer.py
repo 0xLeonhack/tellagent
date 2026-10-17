@@ -50,7 +50,11 @@ def build_state_frame(
         asset=asset.symbol,
         as_of=snapshot.as_of,
         price_state={"change_1h": asset.price_change_1h, "change_6h": asset.price_change_6h},
-        spot_state={"volume_change_1h": asset.spot_volume_change_1h},
+        spot_state={
+            "volume_change_1h": asset.spot_volume_change_1h,
+            "volume_ratio_6h": asset.spot_volume_ratio_6h,
+            "realized_volatility_6h": asset.realized_volatility_6h,
+        },
         leverage_state={
             "funding_rate": asset.funding_rate,
             "open_interest": asset.open_interest,
@@ -258,7 +262,9 @@ def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:
         symbol=frame.asset,
         price_change_1h=frame.price_state.get("change_1h"),
         price_change_6h=frame.price_state.get("change_6h"),
+        realized_volatility_6h=frame.spot_state.get("realized_volatility_6h"),
         spot_volume_change_1h=frame.spot_state.get("volume_change_1h"),
+        spot_volume_ratio_6h=frame.spot_state.get("volume_ratio_6h"),
         funding_rate=frame.leverage_state.get("funding_rate"),
         open_interest=frame.leverage_state.get("open_interest"),
         open_interest_change_interval=frame.leverage_state.get("open_interest_change_interval"),

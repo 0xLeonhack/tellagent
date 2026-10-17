@@ -20,7 +20,9 @@ def assess_market(
     volume_threshold = thresholds.get("spot_volume_change_1h", DEFAULT_VOLUME_THRESHOLD)
     oi, oi_threshold = _oi_signal(asset, thresholds.get("oi_interval", DEFAULT_OI_INTERVAL_THRESHOLD))
 
-    price_direction, price_strength = _price_state(asset.price_change_1h, price_threshold)
+    price_direction, price_strength = _price_state(
+        asset.price_change_1h, price_threshold, asset.realized_volatility_6h
+    )
     leverage_change = _leverage_state(oi, oi_threshold)
     spot_confirmation = _spot_state(asset.spot_volume_change_1h, volume_threshold)
     funding_state = _funding_state(asset.funding_rate)
@@ -76,14 +78,19 @@ def _oi_signal(asset: AssetSnapshot, interval_threshold: float) -> tuple[float |
     return asset.open_interest_change_interval, interval_threshold
 
 
-def _price_state(value: float | None, shock_threshold: float) -> tuple[str, str]:
+def _price_state(
+    value: float | None,
+    shock_threshold: float,
+    realized_volatility: float | None = None,
+) -> tuple[str, str]:
     if value is None:
         return "unknown", "unknown"
     flat_threshold = min(0.0025, shock_threshold / 2)
     if abs(value) <= flat_threshold:
         return "flat", "quiet"
     direction = "up" if value > 0 else "down"
-    strength = "shock" if abs(value) > shock_threshold else "normal"
+    normalized = abs(value) / realized_volatility if realized_volatility and realized_volatility > 0 else 0
+    strength = "shock" if abs(value) > shock_threshold or normalized >= 2.0 else "normal"
     return direction, strength
 
 
