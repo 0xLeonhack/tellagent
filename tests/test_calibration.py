@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from tellagent.calibration import build_strategy_thresholds, compute_feature_baselines
 from tellagent.metrics import analyze_asset
 from tellagent.ledger import JsonlLedger
@@ -41,6 +43,36 @@ def test_feature_baseline_is_not_ready_with_low_coverage():
     baseline = compute_feature_baselines(current, [], min_samples=24)
     assert baseline["price_change_1h"].ready is False
     assert build_strategy_thresholds(baseline) == {}
+
+
+def test_dense_samples_do_not_fake_a_full_baseline_window(tmp_path):
+    ledger = JsonlLedger(tmp_path)
+    start = datetime(2026, 10, 8, tzinfo=timezone.utc)
+    for index in range(24):
+        as_of = (start + timedelta(minutes=5 * index)).isoformat().replace("+00:00", "Z")
+        asset = AssetSnapshot(
+            symbol="BTC",
+            price_change_1h=0.01,
+            spot_volume_change_1h=0.1,
+            funding_rate=0.0001,
+            open_interest_change_interval=0.001,
+            open_interest_interval_seconds=300,
+        )
+        snapshot = MarketSnapshot(
+            as_of=as_of,
+            sources=["test"],
+            assets=[asset],
+            source_times={"coinbase:BTC": start.isoformat().replace("+00:00", "Z"), "deribit:BTC": as_of},
+        )
+        ledger.append_frame(snapshot, asset, build_state_frame(snapshot, asset))
+
+    baselines = compute_feature_baselines(asset, ledger.frames("BTC"))
+
+    assert baselines["funding_rate"].sample_count == 24
+    assert baselines["funding_rate"].coverage_seconds == 23 * 5 * 60
+    assert baselines["funding_rate"].ready is False
+    assert baselines["open_interest_change_interval"].ready is False
+    assert build_strategy_thresholds(baselines) == {}
 
 
 def test_asset_uses_ready_calibrated_thresholds():

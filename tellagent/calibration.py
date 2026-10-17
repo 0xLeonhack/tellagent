@@ -1,3 +1,4 @@
+from datetime import datetime
 from statistics import median
 from typing import Dict, Iterable, Optional
 
@@ -11,21 +12,24 @@ FEATURES = (
     "funding_rate",
     "open_interest_change_interval",
 )
+MIN_BASELINE_COVERAGE_SECONDS = 23 * 3600
 
 
 def compute_feature_baselines(
     current: AssetSnapshot,
     records: Iterable[FrameLedgerRecord],
     min_samples: int = 24,
+    min_coverage_seconds: int = MIN_BASELINE_COVERAGE_SECONDS,
 ) -> Dict[str, FeatureBaseline]:
     records = list(records)
     return {
         feature: _baseline(
-            _historical_values(records, current.symbol, feature),
+            _historical_observations(records, current.symbol, feature),
             hourly_open_interest_change(current)
             if feature == "open_interest_change_interval"
             else getattr(current, feature),
             min_samples,
+            min_coverage_seconds,
         )
         for feature in FEATURES
     }
@@ -47,10 +51,10 @@ def build_strategy_thresholds(baselines: Dict[str, FeatureBaseline]) -> Dict[str
     return thresholds
 
 
-def _historical_values(
+def _historical_observations(
     records: list[FrameLedgerRecord], symbol: str, feature: str
-) -> list[float]:
-    values = []
+) -> list[tuple[datetime, float]]:
+    observations = []
     seen = set()
     for record in records:
         if record.asset_snapshot.symbol.upper() != symbol.upper():
@@ -64,8 +68,12 @@ def _historical_values(
         else:
             value = getattr(record.asset_snapshot, feature)
         if value is not None:
-            values.append(value)
-    return values
+            try:
+                observed_at = _parse_time(source_key)
+            except ValueError:
+                observed_at = _parse_time(record.frame.as_of)
+            observations.append((observed_at, value))
+    return observations
 
 
 def _source_key(record: FrameLedgerRecord, feature: str, symbol: str) -> str:
@@ -76,9 +84,19 @@ def _source_key(record: FrameLedgerRecord, feature: str, symbol: str) -> str:
     return record.frame.as_of
 
 
-def _baseline(values: list[float], current: Optional[float], min_samples: int) -> FeatureBaseline:
-    if not values:
+def _baseline(
+    observations: list[tuple[datetime, float]],
+    current: Optional[float],
+    min_samples: int,
+    min_coverage_seconds: int,
+) -> FeatureBaseline:
+    if not observations:
         return FeatureBaseline(sample_count=0, ready=False)
+    observations = sorted(observations, key=lambda item: item[0])
+    values = [value for _, value in observations]
+    observed_from = observations[0][0]
+    observed_to = observations[-1][0]
+    coverage_seconds = max(0, int((observed_to - observed_from).total_seconds()))
     center = median(values)
     deviations = [abs(value - center) for value in values]
     mad = median(deviations)
@@ -92,10 +110,21 @@ def _baseline(values: list[float], current: Optional[float], min_samples: int) -
     index = min(len(ordered_abs) - 1, int(0.9 * (len(ordered_abs) - 1)))
     return FeatureBaseline(
         sample_count=len(values),
-        ready=len(values) >= min_samples,
+        ready=len(values) >= min_samples and coverage_seconds >= min_coverage_seconds,
+        coverage_seconds=coverage_seconds,
+        observed_from=_format_time(observed_from),
+        observed_to=_format_time(observed_to),
         median=center,
         mad=mad,
         percentile=percentile,
         robust_zscore=robust_zscore,
         p90_abs=ordered_abs[index],
     )
+
+
+def _parse_time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _format_time(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")

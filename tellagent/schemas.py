@@ -126,6 +126,9 @@ class FeatureBaseline(BaseModel):
 
     sample_count: int = Field(ge=0)
     ready: bool
+    coverage_seconds: int = Field(default=0, ge=0)
+    observed_from: Optional[str] = None
+    observed_to: Optional[str] = None
     median: Optional[float] = None
     mad: Optional[float] = None
     percentile: Optional[float] = Field(default=None, ge=0, le=1)
