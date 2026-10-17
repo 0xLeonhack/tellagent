@@ -184,6 +184,7 @@ def evaluate_ledger(root: Path, asset: Optional[str] = None) -> dict:
     v2_false = 0
     suppressed = 0
     suppressed_wrong = 0
+    last_event_key = None
     for index, judgment in enumerate(linked):
         history = linked[:index]
         if not history:
@@ -191,7 +192,15 @@ def evaluate_ledger(root: Path, asset: Optional[str] = None) -> dict:
         trend = compute_judgment_trend(judgment, history)
         previous = history[-1]
         old = _gate_v1(judgment, previous, trend)
-        new = evaluate_gate(judgment, previous, event_open=False, trend=trend)
+        current_event_key = "{}:{}".format(judgment.asset, judgment.selected_value)
+        new = evaluate_gate(
+            judgment,
+            previous,
+            event_open=last_event_key == current_event_key,
+            trend=trend,
+        )
+        if new.action != "silent":
+            last_event_key = new.event_key
         future = linked[index + 1] if index + 1 < len(linked) else None
         if future is not None and future.selected_value != judgment.selected_value:
             one_frame_flips += 1

@@ -56,7 +56,7 @@ def test_gate_stays_silent_on_small_move():
     assert decision.triggers == []
 
 
-def test_gate_suppresses_non_actionable_data_warmup_transition():
+def test_gate_passes_actionable_data_warmup_transition():
     previous = ContinuousJudgment(
         frame_id="a", asset="BTC", as_of="t", selected_value="insufficient_data",
         probabilities={"insufficient_data": 0.65}, confidence=0.65,
@@ -68,4 +68,4 @@ def test_gate_suppresses_non_actionable_data_warmup_transition():
         "probabilities": {"unconfirmed_move_down": 0.6},
         "confidence": 0.6, "research_priority": "watch",
     })
-    assert should_investigate(current, previous, event_open=True) is False
+    assert should_investigate(current, previous, event_open=True) is True

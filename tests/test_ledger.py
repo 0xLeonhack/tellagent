@@ -48,10 +48,11 @@ def test_gate_uses_adjacent_non_memory_judgment(tmp_path):
     assert memory.records() == []
     second_outcome = process_snapshot(second, memory, ledger=ledger)[0]
     assert second_outcome.judgment.selected_value == "spot_confirmed_up"
-    # One frame is not a confirmed state change: the Gate holds it.
-    assert second_outcome.investigated is False
+    # A new material signal is handed to the Agent immediately so a short-lived
+    # market event cannot disappear while the Gate waits for another frame.
+    assert second_outcome.investigated is True
     third_outcome = process_snapshot(third, memory, ledger=ledger)[0]
-    assert third_outcome.investigated is True
+    assert third_outcome.investigated is False
 
 
 def test_gate_decisions_are_persisted_for_silent_and_open_frames(tmp_path):
@@ -78,9 +79,10 @@ def test_gate_decisions_are_persisted_for_silent_and_open_frames(tmp_path):
     process_snapshot(second.model_copy(update={"as_of": "2026-10-08T00:10:00Z"}), memory, ledger=ledger)
 
     records = ledger.gate_decisions("BTC")
-    assert [record["action"] for record in records] == ["silent", "silent", "open_event"]
+    assert [record["action"] for record in records] == ["silent", "open_event", "silent"]
     assert records[0]["investigated"] is False
     assert records[0]["bypassed"] is False
-    assert records[1]["triggers"] == ["awaiting_confirmation"]
-    assert records[2]["investigated"] is True
-    assert "state_confirmed" in records[2]["triggers"]
+    assert "state_changed" in records[1]["triggers"]
+    assert "priority_escalated" in records[1]["triggers"]
+    assert records[1]["investigated"] is True
+    assert records[2]["investigated"] is False

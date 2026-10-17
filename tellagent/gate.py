@@ -5,8 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from .schemas import ContinuousJudgment, JudgmentTrend
 
 
-# The Gate protects the expensive analyst/model call. It must be more careful
-# than the Observer: a single noisy frame is not an event.
+# The Gate protects the expensive analyst/model call without hiding a new
+# market signal. A material actionable state is handed to the Agent once when
+# it first appears; only stable repetitions are cooled down.
 CONFIRMATION_FRAMES = 2
 MATERIAL_STATE_PROBABILITY = 0.40
 MATERIAL_ESCALATION_PROBABILITY = 0.50
@@ -52,12 +53,11 @@ def evaluate_gate(
 
     1. **Data quality** — a judgment dominated by ``insufficient_data`` never
        escalates; there is nothing trustworthy to analyse.
-    2. **Confirmation** — a state change must persist for
-       ``CONFIRMATION_FRAMES``; one-frame flicker is recorded but not escalated.
-    3. **Materiality** — the new state must carry enough probability mass, and
-       escalations must be at least ``significant`` priority.
-    4. **Directionality** — quiet/insufficient de-escalations are silent; only
-       actionable states open or update an event.
+    2. **Recall first** — a new actionable state is emitted immediately once;
+       the Agent can then decide to monitor instead of calling the Analyst.
+    3. **Materiality** — the new state must carry enough evidence weight.
+    4. **Deduplication** — unchanged evidence is silent; only a material score,
+       priority, or contradiction change updates an existing event.
     """
     event_key = "{}:{}".format(current.asset, current.selected_value)
     current_probability = current.probabilities.get(current.selected_value, 0.0)
@@ -70,30 +70,41 @@ def evaluate_gate(
             triggers=["insufficient_data"],
         )
 
+    actionable = current.selected_value in ACTIONABLE_STATES
     if previous is None:
         if (
-            current.research_priority in {"significant", "urgent"}
+            actionable
+            and current.research_priority != "silent"
             and current_probability >= MATERIAL_STATE_PROBABILITY
         ):
             return GateDecision(
                 action="open_event",
                 event_key=event_key,
-                reason="initial judgment has elevated research priority and material evidence",
+                reason="initial actionable signal has material evidence",
                 probability_delta=round(current_probability, 4),
-                triggers=["initial_priority"],
+                triggers=["initial_signal"],
             )
         return _silent(event_key, "initial judgment is not actionable")
 
     previous_insufficient = previous.probabilities.get("insufficient_data", 0.0)
     if previous_insufficient >= INSUFFICIENT_MASS:
-        if current.research_priority in {"silent", "watch"}:
+        if (
+            not actionable
+            or current.research_priority == "silent"
+            or current_probability < MATERIAL_STATE_PROBABILITY
+        ):
             return _silent(
                 event_key,
                 "data warmup completed without an actionable state",
                 triggers=["data_warmup"],
             )
-        # Data recovery with significant evidence is a real event: readiness
-        # itself is new information and does not need another confirmation.
+        return GateDecision(
+            action="open_event",
+            event_key=event_key,
+            reason="data recovered into material state {}".format(current.selected_value),
+            probability_delta=round(current_probability, 4),
+            triggers=["data_recovered"],
+        )
 
     delta = round(
         current_probability
@@ -102,12 +113,6 @@ def evaluate_gate(
     )
     changed = current.selected_value != previous.selected_value
     confirmed = trend is None or trend.consecutive_state_frames >= CONFIRMATION_FRAMES
-    urgent = current.research_priority == "urgent"
-    recovered = (
-        previous_insufficient >= INSUFFICIENT_MASS
-        and current.research_priority in {"significant", "urgent"}
-    )
-    actionable = current.selected_value in ACTIONABLE_STATES
     triggers: List[str] = []
     reasons: List[str] = []
 
@@ -120,23 +125,8 @@ def evaluate_gate(
                 ),
                 delta,
             )
-        if not confirmed and not urgent and not recovered:
-            return _silent(
-                event_key,
-                "state changed to {}; waiting for confirmation ({}/{} frames)".format(
-                    current.selected_value,
-                    trend.consecutive_state_frames if trend is not None else 0,
-                    CONFIRMATION_FRAMES,
-                ),
-                delta,
-                triggers=["awaiting_confirmation"],
-            )
-        if recovered:
-            triggers.append("data_recovered")
-            reasons.append("data recovered into {}".format(current.selected_value))
-        else:
-            triggers.append("state_changed")
-            reasons.append("state changed to {}".format(current.selected_value))
+        triggers.append("state_changed")
+        reasons.append("state changed to {}".format(current.selected_value))
 
     # A held state is emitted exactly once, when it reaches the confirmation
     # count. Later frames have a higher count and stay silent, so the Gate needs
@@ -180,14 +170,13 @@ def evaluate_gate(
         and PRIORITY_RANK[current.research_priority] >= PRIORITY_RANK["significant"]
         and current_probability >= MATERIAL_ESCALATION_PROBABILITY
     )
-    if priority_escalated and (confirmed or urgent):
+    if priority_escalated:
         triggers.append("priority_escalated")
         reasons.append("priority escalated to {}".format(current.research_priority))
 
     conflicts_changed = set(current.contradicting_roles) != set(previous.contradicting_roles)
     if (
         conflicts_changed
-        and (confirmed or urgent)
         and current.research_priority != "silent"
         and current_probability >= MATERIAL_ESCALATION_PROBABILITY
     ):

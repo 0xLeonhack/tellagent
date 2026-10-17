@@ -39,23 +39,22 @@ def _trend(consecutive, delta_1=None):
     )
 
 
-def test_single_frame_state_change_waits_for_confirmation():
+def test_single_frame_material_state_change_opens_immediately():
     previous = _judgment("quiet", 0.7, priority="silent")
     current = _judgment("spot_confirmed_up", 0.7, priority="watch")
     decision = evaluate_gate(current, previous, event_open=False, trend=_trend(1))
-    assert decision.action == "silent"
-    assert decision.triggers == ["awaiting_confirmation"]
+    assert decision.action == "open_event"
+    assert decision.triggers == ["state_changed"]
 
 
 def test_confirmed_state_change_opens_exactly_one_event():
     previous = _judgment("quiet", 0.7, priority="silent")
     current = _judgment("spot_confirmed_up", 0.7, priority="watch")
     first = evaluate_gate(current, previous, event_open=False, trend=_trend(1))
-    second = evaluate_gate(current, current, event_open=False, trend=_trend(2))
+    second = evaluate_gate(current, current, event_open=True, trend=_trend(2))
     third = evaluate_gate(current, current, event_open=True, trend=_trend(3))
-    assert first.action == "silent"
-    assert second.action == "open_event"
-    assert "state_confirmed" in second.triggers
+    assert first.action == "open_event"
+    assert second.action == "silent"
     assert third.action == "silent"
 
 
@@ -89,12 +88,19 @@ def test_data_recovery_with_significant_evidence_is_an_event():
     assert decision.triggers == ["data_recovered"]
 
 
-def test_data_warmup_without_actionable_priority_is_silent():
+def test_data_recovery_into_material_watch_state_opens_immediately():
     previous = _judgment("insufficient_data", 0.9, priority="silent", insufficient=0.9)
     current = _judgment("unconfirmed_move_down", 0.6, priority="watch")
     decision = evaluate_gate(current, previous, event_open=False, trend=_trend(1))
-    assert decision.action == "silent"
-    assert decision.triggers == ["data_warmup"]
+    assert decision.action == "open_event"
+    assert decision.triggers == ["data_recovered"]
+
+
+def test_initial_material_watch_state_is_not_missed():
+    current = _judgment("spot_confirmed_up", 0.6, priority="watch")
+    decision = evaluate_gate(current, None, event_open=False, trend=_trend(1))
+    assert decision.action == "open_event"
+    assert decision.triggers == ["initial_signal"]
 
 
 def test_urgent_state_change_bypasses_confirmation():
@@ -120,12 +126,13 @@ def test_small_probability_move_stays_silent():
     assert decision.triggers == []
 
 
-def test_conflict_change_needs_material_probability_and_confirmation():
+def test_material_conflict_change_updates_immediately():
     previous = _judgment(probability=0.6, contradicting=[])
     current = _judgment(probability=0.6, contradicting=["spot_confirmation"])
     unconfirmed = evaluate_gate(current, previous, event_open=True, trend=_trend(1))
     confirmed = evaluate_gate(current, previous, event_open=True, trend=_trend(2))
-    assert unconfirmed.action == "silent"
+    assert unconfirmed.action == "update_event"
+    assert "conflicts_changed" in unconfirmed.triggers
     assert "conflicts_changed" in confirmed.triggers
     weak = evaluate_gate(
         _judgment(probability=0.3, contradicting=["spot_confirmation"]),

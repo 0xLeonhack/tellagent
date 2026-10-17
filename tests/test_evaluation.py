@@ -92,9 +92,9 @@ def test_live_evaluation_counts_gate_v1_and_v2_escalations(tmp_path):
     assert report["judgments"] == 3
     assert report["gate_v1_escalations"] == 1
     assert report["gate_v2_escalations"] == 1
-    # The old Gate fires on the first changed frame; the new Gate holds it for
-    # one frame and then confirms, so it suppresses exactly that frame.
-    assert report["gate_v1_suppressed_by_v2"] == 1
+    # Both Gates see the changed frame, while the new Gate remembers the open
+    # event and suppresses its stable repetition.
+    assert report["gate_v1_suppressed_by_v2"] == 0
     assert report["suppressed_that_did_not_persist"] == 0
 
 
