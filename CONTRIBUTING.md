@@ -6,16 +6,15 @@
 
 按顺序读这几份文档：
 
-1. [`context.md`](docs/context.md) —— 当前决策、术语和不可违背的边界；
-2. [`prd.md`](docs/prd.md) 与 [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) —— 用户体验、技术设计与契约；
-3. [`DEVELOPMENT.md`](docs/DEVELOPMENT.md) —— 当前开发流程与验收标准；
-4. [`plan.md`](docs/plan.md) —— 当前阶段的实现计划。
+1. [`README.md`](README.md) —— 当前功能、运行方式、限制与项目方向；
+2. [`DEVELOPMENT.md`](docs/DEVELOPMENT.md) —— 模块边界、开发流程与验收标准；
+3. [`ACCURACY.md`](docs/ACCURACY.md) —— 数据真实性、指标口径与 Gate 验证方法。
 
 若你的改动会扩大范围（见下），请先开 Issue 讨论，不要直接提大 PR。
 
 ## 当前范围
 
-**保持**：Python 3.12 + `uv`、Coinbase/Deribit 公共数据、BTC/ETH、Jev 结构化判断、门控后才调用强模型、JSONL 记忆、Rich 报告。
+**保持**：Python 3.12 + `uv`、Coinbase/Deribit 公共数据、BTC/ETH、本地规则 Observer（Jev 可选）、门控后才调用强模型、JSONL 记忆、Rich 报告。
 
 **不做**：运行时虚构行情或 fixture 场景、数据库/向量数据库、Web 与后台 Worker、多 Agent 投票与任意编排（单个受约束 Agent 循环已实现）、链上数据、自动交易与收益预测。
 
@@ -35,7 +34,7 @@ uv run python -m tellagent research --cycles 1 --analyst none
 uv run python -m tellagent agent --cycles 2 --interval 20 --asset ETH --analyst none
 ```
 
-`--analyst none` 路径不需要任何密钥，会跑通数据采集 + 确定性指标 + Jev 门控 + 记忆写入。若改动了远程 Analyst / Jev 逻辑，请额外用你自己的兼容端点做一次真实单轮验证。
+`--analyst none` 路径不需要任何密钥，会跑通数据采集、确定性指标、本地 Observer 和 Gate。只有 Gate 放行的研究事件才写入记忆。若改动了远程 Analyst、Agent Provider 或 Jev 逻辑，请额外用你自己的兼容端点做一次真实单轮验证。
 
 ## 代码边界
 
@@ -49,7 +48,7 @@ uv run python -m tellagent agent --cycles 2 --interval 20 --asset ETH --analyst 
 - `memory.py` 使用 append-only JSONL；
 - `research.py` 是唯一的循环编排入口；
 - `renderer.py` 只负责 Rich 输出；
-- `cli.py` 暴露 `research`、`agent`、`agent-stats` 三个命令；
+- `cli.py` 暴露 `research`、`agent`、`replay`、`audit`、`evaluate`、`agent-stats` 六个命令；
 - `agent_loop.py` 只做有限步循环与步数预算；
 - `agent_tools.py` 只注册静态工具；
 - `agent_policy.py` 只提供本地确定性策略；

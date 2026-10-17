@@ -23,7 +23,7 @@ Coinbase / Deribit
 - 5 分钟级循环；
 - Observer 结构化判断；
 - 只有门控通过才调用强模型；
-- 只保存重要判断和分析结果；
+- 每帧 Frame/Judgment 都进入审计账本，只有 Gate 放行的研究上下文进入 Memory；
 - Rich 报告；
 - JSONL 记忆，不使用数据库。
 
@@ -35,7 +35,7 @@ Coinbase / Deribit
 - Web、后台 Worker、多 Agent 投票与任意编排（已实现的是单个受约束 Agent 循环）；
 - 链上数据、自动交易和收益预测。
 
-已实现（不再是非目标）：事件生命周期、6h/24h/7d 自动复盘、受约束 Agent 循环与可回放 Trace。
+已实现（不再是非目标）：研究事件落盘、6h/24h/7d 自动复盘、受约束 Agent 循环与可回放 Trace。
 
 测试中可以构造结构化样本和 Mock HTTP 响应，但不能把它们作为产品运行入口。
 
@@ -50,7 +50,7 @@ Agent      在白名单内选择下一步研究动作（agent 模式）
 Memory     保存并检索通过门控的上下文
 ```
 
-`Gate` 不是另一个 Agent，也不重新判断市场。它是纯函数策略，只读取 Observer 的 `ContinuousJudgment` 和上一条判断，检测状态变化、概率跃迁和研究优先级。
+`Gate` 不是另一个 Agent，也不重新判断市场。它是纯函数策略，只读取 Observer 的 `ContinuousJudgment` 和上一条判断，检测状态、分数或概率、研究优先级与冲突关系的材料变化。
 
 Agent 也不是事实来源：它不计算指标、不抓数据、不下单，只能从 6 个动作和 6 个静态注册工具中选择下一步。
 
@@ -60,7 +60,7 @@ Agent 也不是事实来源：它不计算指标、不抓数据、不下单，�
 - `metrics.py` 只做确定性计算；
 - `scoring.py` 只做证据构造、状态 logits、softmax 和置信度计算，是 Observer 的唯一打分来源；
 - `observer.py` 提供本地规则 Observer 和可替换远程 Jev Provider；
-- `gate.py` 提供带确认、材料性、数据不足恢复和事件生命周期的 `evaluate_gate`；
+- `gate.py` 提供新信号立即放行、稳定重复去重、材料性检查和数据恢复检测的 `evaluate_gate`；
 - `audit.py` 独立重算帧、概率和判断，并可联网重算指标，不信任流水线记账；
 - `evaluation.py` 获取公开历史数据做分布/前向检验，并在同一批实盘判断上对照旧/新 Gate；
 - `analyst.py` 只保留远程强 Analyst；
@@ -92,9 +92,9 @@ Agent 也不是事实来源：它不计算指标、不抓数据、不下单，�
 配置真实强模型：
 
 ```bash
-export TELLAGENT_MODEL_API_URL="https://provider.example/v1/chat/completions"
+export TELLAGENT_MODEL_API_URL="https://api.deepseek.com/chat/completions"
 export TELLAGENT_MODEL_API_KEY="your-key"
-export TELLAGENT_MODEL_NAME="deepseek-chat"
+export TELLAGENT_MODEL_NAME="deepseek-flash"
 ```
 
 运行一次：
@@ -109,7 +109,7 @@ uv run python -m tellagent research --cycles 1 --analyst remote
 uv run python -m tellagent research --cycles 0 --interval 300 --analyst remote
 ```
 
-只运行 Jev 和记忆门控：
+只运行本地 Observer、Gate 和确定性报告：
 
 ```bash
 uv run python -m tellagent research --cycles 1 --analyst none

@@ -13,7 +13,7 @@
 
 </div>
 
-tellagent 每隔固定时间读取 Coinbase 现货和 Deribit 永续数据，由代码计算指标，由 Observer 判断市场状态，再由 Gate 决定是否唤醒研究 Agent。Agent 只能从 6 个动作和 6 个静态注册工具里选择下一步，输出始终包含支持证据、反向证据、缺失数据和失效条件。
+tellagent 每隔固定时间读取 Coinbase 现货和 Deribit 永续数据，由代码计算指标，由 Observer 判断市场状态，再由 Gate 决定是否唤醒研究 Agent。Agent 只能从 6 个动作和 6 个静态注册工具里选择下一步；生成报告时必须包含支持证据、反向证据、缺失数据和失效条件。
 
 > 它生成研究报告和因子假设，不生成交易指令。
 
@@ -28,7 +28,7 @@ MarketStateFrame
         ↓
 Observer（默认本地规则；Jev 可选）
         ↓
-Gate（状态跃迁 / 概率跳变 / 优先级升级 / 冲突变化）
+Gate（新状态 / 分数或概率变化 / 优先级升级 / 冲突变化）
         ↓
 ┌─ workflow 模式（research）：直接调用强 Analyst
 └─ agent 模式（agent）：Agent 在动作白名单内选下一步
@@ -55,7 +55,7 @@ Observer 先拆分价格方向、价格强度、杠杆变化、现货确认、Fu
 | `conflicting` | 数据完整，但价格、现货与杠杆证据无法形成一致解释 |
 | `insufficient_data` | 关键数据缺失，不能形成可靠判断 |
 
-稳定状态不会重复调用强模型。只有状态、概率、研究优先级或冲突关系变化时，Gate 才重新放行。
+材料性新状态第一次出现时立即放行，避免等待确认而错过短时信号；相同状态只有在分数、研究优先级或冲突关系发生材料变化时才再次放行。
 
 ## 受约束 Agent
 
@@ -89,7 +89,7 @@ Agent 的动作是静态白名单，代码拥有事实、工具执行、步数�
 - 价格、成交量、Funding、Open Interest 与短周期 OI 变化；
 - 本地规则 Observer 和可选 TypeSafe Jev Provider；
 - 1/3/12 帧概率趋势、EWMA、持续帧数和状态翻转；
-- 至少 24 个去重样本后启用有上下限的动态阈值；
+- 至少 24 个去重样本且覆盖不少于 23 小时后，才启用有上下限的动态阈值；
 - DeepSeek 等 OpenAI-compatible 强 Analyst；
 - 稳定 Evidence ID，模型不能新增不存在的证据；
 - Point-in-Time Frame/Judgment 账本；
@@ -301,7 +301,7 @@ uv run pytest
 - 公开接口没有历史 OI，因此无法做全状态历史回测；阈值基于可获得的真实价格、
   成交量和 funding 分布校准，见 [docs/ACCURACY.md](docs/ACCURACY.md)；
 - Observer 输出的是证据加权 softmax 分布，不是经过概率校准的预测；UI 标记为“启发式分数”；
-- 动态阈值需要至少 24 个去重样本，否则使用默认阈值；
+- 动态阈值需要至少 24 个去重样本且覆盖不少于 23 小时，否则使用默认阈值；
 - Outcome Review 需要进程持续运行，或之后重新启动并读取已有账本；
 - 新账本的头几帧通常是 `insufficient_data` / `quiet`，要看到 Agent 的升级链路需要状态发生变化
   （用 `replay` 或已有账本演示更稳定）；
@@ -349,11 +349,6 @@ uv run pytest
 
 - [三分钟演示脚本](docs/DEMO.md)
 - [三分钟介绍](docs/PITCH.md)
-- [当前决策](docs/context.md)
-- [产品需求](docs/prd.md)
 - [开发守则](docs/DEVELOPMENT.md)
-- [架构与数据契约](docs/ARCHITECTURE.md)
-- [产品假设与停止条件](docs/PRODUCT.md)
-- [后续计划](docs/NEXT_STEPS.md)
-- [Agent 重构计划](docs/PLAN4AGENT.md)
+- [准确性与真实性验证](docs/ACCURACY.md)
 - [贡献指南](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [MIT License](LICENSE)

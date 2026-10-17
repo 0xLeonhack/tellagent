@@ -26,8 +26,9 @@ uv run python -m tellagent research --cycles 2 --interval 20 --provider rule --a
 uv run python -m tellagent agent --cycles 2 --interval 20 --provider rule --analyst none
 ```
 
-看点：终端会先打印 `Observer 判断` 和 `研究建议`，再打印 `Agent 轨迹`。
-市场平静时轨迹只有一行 `1. monitor`，**不生成报告、不写记忆、不调用强模型**——这是 Agent 自己做出的决定，不是代码写死的分支。
+看点：终端会先打印 `Observer 判断` 和 `研究建议`。Gate 静默时不会启动 Agent，
+因此没有 `Agent 轨迹`；Gate 放行后才显示 Agent 的动作与工具。第 2 节的回放会绕过实时 Gate，
+可以稳定展示 Agent 对 quiet 帧自主选择 `monitor`。
 
 ## 2. 断网也能复现：回放真实记录帧（约 30 秒）
 
@@ -54,11 +55,9 @@ uv run python -m tellagent replay --frames 3 --asset BTC \
 默认 Observer（`--provider rule`）是本地规则代码，不调用模型；只有 Gate 发现新的材料性信号后，
 才会调用远程 Agent，强 Analyst 是否调用再由 Agent 决定。真实市场大多数时间平静，所以现场演示的期望是：
 
-- 当前采集器实测约 26 分钟、每个资产 26 帧、Gate 放行 0 次、AI 调用 0 次；
-- 30 天公开数据中，BTC 8.2%、ETH 12.6% 的小时超过 0.6% 的涨跌阈值；
-  按状态切换的代理估计约每天每资产 5 次活跃状态变化；
-- 两个资产合计，正常时段约 **0–1 次 Gate 放行/小时**，活跃时段 1–3 次；
-  其中大多数小时是 0 次。3–10 分钟的现场窗口不能保证命中。
+- 多数五分钟采样不会产生新的材料性状态；
+- Gate 只在新状态或证据关系发生材料变化时放行；
+- 3–10 分钟的现场窗口不能保证刚好命中事件。
 
 这不是缺陷，而是 Gate 的目的：过滤噪声、控制成本。演示时把“现场静默”当作第一幕，
 用第 2 节的真实记录帧回放展示完整链路；不要为了现场效果调低阈值或伪造行情。
@@ -70,6 +69,7 @@ uv run python -m tellagent replay --frames 3 --asset BTC \
 
 ```bash
 uv run python -m tellagent replay --frame-id 9e873b25ef278057 \
+  --memory-path /tmp/tellagent-demo/memory.jsonl \
   --agent-provider remote --analyst none
 ```
 
@@ -89,7 +89,8 @@ Agent 轨迹  BTC:9e873b25ef278057 · 决策方 remote-agent · 2 步 · 模型�
 完整 Agent 模式（Agent 决策 + 强 Analyst 写报告）：
 
 ```bash
-uv run python -m tellagent agent --cycles 2 --interval 20 --analyst remote
+uv run python -m tellagent agent --cycles 2 --interval 20 \
+  --provider rule --agent-provider remote --analyst remote
 ```
 
 ## 4. 评估视图：Agent 到底做了什么（约 10 秒）
