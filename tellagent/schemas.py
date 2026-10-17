@@ -112,6 +112,9 @@ class MarketAssessment(BaseModel):
         "insufficient_data",
     ]
     risk_flags: List[str] = Field(default_factory=list)
+    primary_regime: Optional[str] = None
+    secondary_regimes: List[str] = Field(default_factory=list)
+    regime_scores: Dict[str, float] = Field(default_factory=dict)
     data_quality_score: float = Field(default=1.0, ge=0, le=1)
     source_alignment_seconds: Optional[int] = Field(default=None, ge=0)
 

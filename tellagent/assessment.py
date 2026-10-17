@@ -33,6 +33,11 @@ def assess_market(
     risk_flags = _risk_flags(
         price_strength, leverage_change, spot_confirmation, funding_state, data_quality
     )
+    regime_scores = _regime_scores(
+        price_direction, leverage_change, spot_confirmation, price_strength, data_quality
+    )
+    ranked = sorted(regime_scores.items(), key=lambda item: item[1], reverse=True)
+    secondary = [name for name, score in ranked[1:3] if score >= 0.35]
     return MarketAssessment(
         price_direction=price_direction,
         price_strength=price_strength,
@@ -45,6 +50,9 @@ def assess_market(
         risk_flags=risk_flags,
         data_quality_score=data_quality_score,
         source_alignment_seconds=source_alignment_seconds,
+        primary_regime=regime,
+        secondary_regimes=secondary,
+        regime_scores=regime_scores,
     )
 
 
@@ -178,3 +186,36 @@ def _risk_flags(
     if quality != "complete":
         flags.append("data_{}".format(quality))
     return flags
+
+
+def _regime_scores(direction, leverage, spot, strength, quality) -> dict[str, float]:
+    scores = {name: 0.0 for name in (
+        "quiet", "spot_confirmed_up", "spot_confirmed_down",
+        "leverage_expansion_up", "leverage_expansion_down",
+        "position_unwind_up", "position_unwind_down",
+        "broad_participation_up", "broad_participation_down",
+        "unconfirmed_move_up", "unconfirmed_move_down", "conflicting", "insufficient_data",
+    )}
+    if quality == "insufficient":
+        scores["insufficient_data"] = 0.8
+        return scores
+    if direction == "flat" and leverage == "stable" and spot != "strong":
+        scores["quiet"] = 0.8
+        return scores
+    suffix = "up" if direction == "up" else "down"
+    if leverage == "expanding":
+        scores["broad_participation_{}".format(suffix)] = 0.75 if spot == "strong" else 0.25
+        scores["leverage_expansion_{}".format(suffix)] = 0.8 if spot != "strong" else 0.45
+    elif leverage == "contracting":
+        scores["position_unwind_{}".format(suffix)] = 0.8
+    elif leverage == "stable" and spot == "strong":
+        scores["spot_confirmed_{}".format(suffix)] = 0.8
+    else:
+        scores["unconfirmed_move_{}".format(suffix)] = 0.65
+    if strength == "shock":
+        for name in list(scores):
+            if name not in {"quiet", "insufficient_data"}:
+                scores[name] = min(0.95, scores[name] + 0.1)
+    if spot == "strong" and leverage in {"expanding", "contracting"}:
+        scores["conflicting"] = max(scores["conflicting"], 0.45)
+    return scores

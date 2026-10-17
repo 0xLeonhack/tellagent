@@ -230,6 +230,14 @@ REGIME_CRITERIA = {
 
 
 def _heuristic_scores(frame: MarketStateFrame, assessment) -> Dict[str, float]:
+    if assessment.regime_scores:
+        scores = dict(assessment.regime_scores)
+        total = sum(scores.values())
+        if total > 0:
+            normalized = {key: round(value / total, 4) for key, value in scores.items()}
+            selected = assessment.regime
+            normalized[selected] = round(normalized[selected] + (1.0 - sum(normalized.values())), 4)
+            return normalized
     scores = {regime: 0.0 for regime in REGIMES}
     selected = assessment.regime
     price = abs(frame.price_state.get("change_1h") or 0.0)
