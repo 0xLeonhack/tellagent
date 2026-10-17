@@ -30,16 +30,13 @@ Agent 不执行交易、不修改账户、不自由浏览互联网，也不负�
 | 5 因子研究 Agent | 已完成 | `create_factor_hypothesis` 写入 `factor_hypotheses.jsonl`（白名单因子） |
 | 6 双模式运行 | 已完成 | `research`（workflow）与 `agent`（agent）共用同一流水线与账本 |
 
-## 当前问题
+## 当前状态
 
-当前系统已经有真实数据、指标、Observer、Gate、强 Analyst、Memory、Outcome Review 和因子假设。但默认路径仍然是：
+Agent 模式已经接入 CLI。默认 `research` 仍保留确定性 workflow，`agent` 命令运行受约束的 Agent 闭环：
 
 ```text
-代码规则决定是否调用模型
-  → 模型只生成最终报告
+Observer → Gate → AgentAction → ToolCall → ToolResult → 报告 / 因子假设 → Trace
 ```
-
-模型还没有真正决定下一步研究动作，也没有通过工具结果进行多步判断。因此当前是 Agent-ready 的工作流，还不是完整 Agent。
 
 ## Agent 闭环
 
@@ -167,7 +164,7 @@ MarketStateFrame + Judgment
 
 ### 阶段 3：接入 DeepSeek Agent Observer
 
-结构化 DeepSeek Agent Provider 已实现，下一步将它接入 AgentLoop 和 CLI agent mode。
+结构化 DeepSeek Agent Provider 已接入 AgentLoop 和 CLI `agent` / `replay` 模式。
 
 DeepSeek 负责选择 Regime、研究动作和下一步工具。代码继续负责：
 
