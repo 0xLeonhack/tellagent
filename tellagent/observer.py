@@ -91,6 +91,7 @@ class RuleBasedObserver:
         )
         scores = _heuristic_scores(frame, assessment)
         conflicts = _conflict_roles(assessment)
+        confidence = _heuristic_confidence(scores, assessment)
         now = datetime.now(timezone.utc)
         return ContinuousJudgment(
             frame_id=frame.frame_id,
@@ -98,7 +99,7 @@ class RuleBasedObserver:
             as_of=frame.as_of,
             selected_value=assessment.regime,
             probabilities=scores,
-            confidence=max(scores.values()),
+            confidence=confidence,
             score_kind="heuristic",
             supporting_roles=_available_roles(frame),
             contradicting_roles=conflicts,
@@ -263,6 +264,16 @@ def _heuristic_scores(frame: MarketStateFrame, assessment) -> Dict[str, float]:
     correction = round(1 - sum(scores.values()), 4)
     scores[selected] = round(scores[selected] + correction, 4)
     return scores
+
+
+def _heuristic_confidence(scores: Dict[str, float], assessment) -> float:
+    ranked = sorted(scores.values(), reverse=True)
+    top = ranked[0] if ranked else 0.0
+    runner_up = ranked[1] if len(ranked) > 1 else 0.0
+    margin = max(0.0, top - runner_up)
+    quality_factor = {"complete": 1.0, "degraded": 0.8, "insufficient": 0.5}[assessment.data_quality]
+    conflict_factor = 0.75 if assessment.alignment == "conflicting" else 1.0
+    return round(min(0.95, (0.55 + 0.35 * margin) * quality_factor * conflict_factor), 4)
 
 
 def _asset_from_frame(frame: MarketStateFrame) -> AssetSnapshot:

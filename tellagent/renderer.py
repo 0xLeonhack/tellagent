@@ -99,6 +99,7 @@ def _print_counts(console: Console, title: str, counts) -> None:
 def _print_judgment(console: Console, judgment: ContinuousJudgment) -> None:
     console.print("[bold]Observer 判断[/bold]  {} / {}".format(judgment.provider, judgment.model_version))
     console.print("  • 状态: {} (confidence {:.0%})".format(judgment.selected_value, judgment.confidence))
+    console.print("  • 分数类型: {}".format(judgment.score_kind))
     console.print("  • 概率: {}".format(
         " · ".join("{} {:.2f}".format(name, value) for name, value in judgment.probabilities.items())
     ))

@@ -211,6 +211,8 @@ Agent 选择 `generate_factor` 时：
 **状态：已完成。** 因子只能取自 `factors.py` 的白名单定义（名称、输入、公式草稿、方向、周期、测试计划），
 Agent 只能选择名字和备注，不能自造公式；`worldquant_drafts.md` 在每次写入假设时自动重建。
 
+Market State v2 的本地 Observer 已使用连续 Regime 分数和质量/冲突修正的 confidence，Jev Provider 继续使用独立的概率协议。
+
 ### 阶段 6：双模式运行
 
 ```text
