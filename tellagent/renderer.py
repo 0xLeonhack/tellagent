@@ -1,148 +1,285 @@
 from typing import Iterable
 
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from .agent_schemas import AgentRunSummary, AgentStats
 from .research import ResearchOutcome
-from .schemas import ContinuousJudgment, MarketReport
+from .schemas import MarketReport
+
+
+PRIORITY_LABELS = {
+    "silent": "静默",
+    "watch": "观察",
+    "significant": "重要",
+    "urgent": "紧急",
+}
+PRIORITY_STYLES = {
+    "silent": "dim",
+    "watch": "yellow",
+    "significant": "bold bright_yellow",
+    "urgent": "bold red",
+}
+ACTION_LABELS = {
+    "monitor": "继续观察",
+    "investigate": "深入研究",
+    "compare_history": "对比历史",
+    "generate_factor": "生成因子",
+    "wait_for_confirmation": "等待确认",
+    "finish": "完成研究",
+    "investigate_now": "立即研究",
+}
 
 
 def render_reports(outcomes: Iterable[ResearchOutcome], console: Console = None) -> None:
     console = console or Console()
-    console.print("[bold cyan]tellagent · Market Contradiction Report[/bold cyan]")
-    console.print("研究提示，不是交易建议。\n")
-    for outcome in outcomes:
-        _print_judgment(console, outcome.judgment)
-        console.print("  • 状态持续: {} 帧 · 近 12 帧翻转: {} 次".format(
-            outcome.trend.consecutive_state_frames, outcome.trend.state_flips_12
-        ))
-        _print_guidance(console, outcome.guidance)
-        if outcome.agent_run is not None:
-            _print_agent_run(console, outcome.agent_run)
-        if outcome.report is not None:
-            _print_report(console, outcome.report)
-        elif outcome.agent_run is not None:
-            console.print("[bold]结论[/bold]  Agent 未升级为完整报告：{}\n".format(
-                outcome.agent_run.terminal_action
-            ))
+    outcomes = list(outcomes)
+    console.print()
+    console.rule("[bold cyan]tellagent[/bold cyan]  市场研究", style="cyan")
+    console.print("[dim]研究辅助 · 非交易建议[/dim]")
+    if not outcomes:
+        console.print("[yellow]本轮没有可展示的市场结果。[/yellow]")
+        return
+
+    for index, outcome in enumerate(outcomes):
+        if index:
+            console.print()
+        _print_outcome(console, outcome)
 
 
 def render_agent_stats(stats: AgentStats, console: Console = None) -> None:
     console = console or Console()
-    console.print("[bold cyan]tellagent · Agent 行为统计[/bold cyan]")
-    console.print("来自 .tellagent/agent_traces 的可回放记录。\n")
+    console.print()
+    console.rule("[bold cyan]tellagent[/bold cyan]  Agent 行为统计", style="cyan")
     if stats.run_count == 0:
-        console.print("还没有 Agent 运行记录。先运行 uv run python -m tellagent agent。")
+        console.print("[yellow]还没有 Agent 运行记录。先运行 `uv run python -m tellagent agent`。[/yellow]")
         return
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_row("运行次数", str(stats.run_count))
-    table.add_row("平均步数", "{:.2f}".format(stats.average_steps))
-    table.add_row("平均工具调用", "{:.2f}".format(stats.average_tool_calls))
-    table.add_row("平均模型调用", "{:.2f}".format(stats.average_model_calls))
-    table.add_row("升级报告比例", "{:.0%}".format(stats.finish_rate))
-    table.add_row("工具成功率", "{:.0%}".format(stats.tool_success_rate))
-    console.print(Panel(table, title="概览", border_style="cyan"))
-    _print_counts(console, "动作分布", stats.action_counts)
-    _print_counts(console, "工具分布", stats.tool_counts)
-    _print_counts(console, "终止动作", stats.terminal_counts)
+
+    overview = Table.grid(expand=True, padding=(0, 1))
+    for _ in range(3):
+        overview.add_column(ratio=1)
+    overview.add_row(
+        _stat("运行次数", str(stats.run_count)),
+        _stat("平均步骤", "{:.2f}".format(stats.average_steps)),
+        _stat("平均模型调用", "{:.2f}".format(stats.average_model_calls)),
+    )
+    overview.add_row(
+        _stat("平均工具调用", "{:.2f}".format(stats.average_tool_calls)),
+        _stat("报告升级率", "{:.0%}".format(stats.finish_rate)),
+        _stat("工具成功率", "{:.0%}".format(stats.tool_success_rate)),
+    )
+    console.print(Panel(overview, title="运行概览", border_style="cyan", box=box.ROUNDED))
+
+    distributions = Table(box=box.SIMPLE, expand=True, show_edge=False)
+    distributions.add_column("分布", style="bold", width=12)
+    distributions.add_column("计数")
+    _add_counts_row(distributions, "动作", stats.action_counts)
+    _add_counts_row(distributions, "工具", stats.tool_counts)
+    _add_counts_row(distributions, "终止方式", stats.terminal_counts)
+    console.print(distributions)
+
+
+def _print_outcome(console: Console, outcome: ResearchOutcome) -> None:
+    judgment = outcome.judgment
+    report = outcome.report
+    priority = PRIORITY_LABELS.get(judgment.research_priority, judgment.research_priority)
+    priority_style = PRIORITY_STYLES.get(judgment.research_priority, "white")
+    decision = "已生成研究报告" if report else "仅观察，未生成报告"
+    if outcome.agent_run is not None and report is None:
+        decision = "Agent 决定{}".format(
+            ACTION_LABELS.get(outcome.agent_run.terminal_action, outcome.agent_run.terminal_action)
+        )
+
+    summary = Table.grid(expand=True, padding=(0, 1))
+    summary.add_column(ratio=2)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=1)
+    summary.add_column(ratio=2)
+    summary.add_row(
+        _stat("市场状态", judgment.selected_value, "bold white"),
+        _stat("置信度", "{:.0%}".format(judgment.confidence)),
+        _stat("优先级", priority, priority_style),
+        _stat("本轮处理", decision, "green" if report else "dim"),
+    )
+    console.print(Panel(
+        summary,
+        title="[bold]{}[/bold]".format(judgment.asset),
+        subtitle="{} · {}".format(judgment.provider, judgment.as_of),
+        border_style=_priority_border(judgment.research_priority),
+        box=box.ROUNDED,
+    ))
+
+    headline = report.headline if report else _observation_headline(outcome)
+    console.print(Panel(
+        Text(headline, style="bold"),
+        title="结论",
+        border_style="green" if report else "bright_black",
+        box=box.SIMPLE,
+        padding=(0, 1),
+    ))
+
+    if report is not None:
+        _print_metrics(console, report)
+    _print_signal_context(console, outcome)
+    if outcome.agent_run is not None:
+        _print_agent_run(console, outcome.agent_run)
+    if report is not None:
+        _print_evidence(console, report)
+        console.print("[bold]失效条件[/bold] ", Text(report.invalidation_condition))
+        console.print("[dim]来源 {} · 数据时间 {}[/dim]".format(", ".join(report.sources), report.data_time))
+
+
+def _print_metrics(console: Console, report: MarketReport) -> None:
+    metrics = report.metrics
+    table = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False, pad_edge=False)
+    table.add_column("价格 1h", justify="right")
+    table.add_column("价格 6h", justify="right")
+    table.add_column("现货量 1h", justify="right")
+    table.add_column("Funding", justify="right")
+    table.add_column("OI 本轮", justify="right")
+    table.add_column("Open Interest", justify="right")
+    table.add_row(
+        _colored_percent(metrics.price_change_1h),
+        _colored_percent(metrics.price_change_6h),
+        _colored_percent(metrics.spot_volume_change_1h),
+        _colored_percent(metrics.funding_rate, digits=4),
+        _colored_percent(metrics.open_interest_change_interval),
+        _format_number(metrics.open_interest),
+    )
+    console.print(table)
+
+
+def _print_signal_context(console: Console, outcome: ResearchOutcome) -> None:
+    judgment = outcome.judgment
+    top_scores = sorted(judgment.probabilities.items(), key=lambda item: item[1], reverse=True)[:3]
+    score_label = "概率" if judgment.score_kind == "probability" else "启发式分数"
+    score_text = "  ·  ".join("{} {:.0%}".format(name, value) for name, value in top_scores)
+
+    table = Table.grid(expand=True, padding=(0, 1))
+    table.add_column(style="bold", width=12)
+    table.add_column(ratio=1)
+    table.add_row(score_label, score_text or "无")
+    table.add_row(
+        "状态趋势",
+        "持续 {} 帧  ·  近 12 帧翻转 {} 次".format(
+            outcome.trend.consecutive_state_frames, outcome.trend.state_flips_12
+        ),
+    )
+    table.add_row("研究重点", "；".join(outcome.guidance.focus) or "无")
+    if outcome.guidance.factor_candidates:
+        table.add_row("因子候选", "、".join(outcome.guidance.factor_candidates))
+    if judgment.contradicting_roles:
+        table.add_row("冲突信号", "、".join(judgment.contradicting_roles))
+    if judgment.missing_roles:
+        table.add_row("缺失数据", "、".join(judgment.missing_roles))
+    console.print(Panel(table, title="Observer 判断 · 研究建议", border_style="bright_black", box=box.ROUNDED))
 
 
 def _print_agent_run(console: Console, summary: AgentRunSummary) -> None:
-    console.print("[bold]Agent 轨迹[/bold]  {} · 决策方 {} · {} 步 · 模型调用 {} 次".format(
-        summary.trace_id, summary.decision_provider, summary.steps, summary.model_calls
-    ))
-    for index, decision in enumerate(summary.trace.decisions, start=1):
-        action = decision.action.action
-        tool = decision.action.tool_name
-        line = "  {}. {}  {}".format(index, action, decision.action.reason)
-        console.print(line)
-        if tool:
+    table = Table(box=box.SIMPLE_HEAD, expand=True, show_edge=False, pad_edge=False)
+    table.add_column("步", justify="right", width=3)
+    table.add_column("动作", style="bold", width=12)
+    table.add_column("工具 / 结果", width=22, overflow="fold")
+    table.add_column("理由", ratio=1, overflow="fold")
+    for decision in summary.trace.decisions:
+        action = ACTION_LABELS.get(decision.action.action, decision.action.action)
+        tool_text = Text("—")
+        if decision.action.tool_name:
             result = decision.tool_result
-            status = "ok" if result is not None and result.ok else "failed"
+            succeeded = result is not None and result.ok
             detail = _tool_detail(result)
-            console.print("     工具 {} → {} {}".format(tool, status, detail))
-    if summary.error:
-        console.print("[bold red]  Agent 错误[/bold red]  {}".format(summary.error))
-    budget = "" if summary.terminal_within_budget else "（步数预算用尽后自动结束）"
-    console.print("  终止: {}{} · confidence {:.0%}".format(
-        summary.terminal_action, budget, summary.confidence
-    ))
+            tool_text = Text(decision.action.tool_name + "  ")
+            tool_text.append("成功" if succeeded else "失败", style="green" if succeeded else "red")
+            if detail:
+                tool_text.append("\n" + detail, style="dim")
+        table.add_row(str(decision.step), action, tool_text, Text(decision.action.reason))
+
+    provider = "{} · {} 步 · 模型调用 {} 次 · 置信度 {:.0%}".format(
+        summary.decision_provider, summary.steps, summary.model_calls, summary.confidence
+    )
+    footer = Text.from_markup("[dim]{}[/dim]".format(provider))
+    if not summary.terminal_within_budget:
+        footer.append("\n步数预算用尽后自动结束", style="yellow")
     if summary.factor_hypothesis_ids:
-        console.print("  因子假设: {}".format("、".join(summary.factor_hypothesis_ids)))
+        footer.append("\n因子假设  {}".format("、".join(summary.factor_hypothesis_ids)), style="cyan")
+    if summary.error:
+        footer.append("\n错误  {}".format(summary.error), style="bold red")
+    console.print(Panel(
+        Group(table, footer),
+        title="Agent 研究轨迹",
+        subtitle="trace {}".format(summary.trace_id),
+        border_style="blue",
+        box=box.ROUNDED,
+    ))
+
+
+def _print_evidence(console: Console, report: MarketReport) -> None:
+    table = Table(box=box.SIMPLE, expand=True, show_edge=False, pad_edge=False)
+    table.add_column("类型", width=10)
+    table.add_column("证据")
+    groups = (
+        ("[green]支持[/green]", report.supporting_evidence),
+        ("[yellow]反向[/yellow]", report.contradicting_evidence),
+        ("[magenta]缺失[/magenta]", report.missing_evidence),
+    )
+    for label, items in groups:
+        for index, item in enumerate(items):
+            table.add_row(label if index == 0 else "", Text(item))
+    console.print(Panel(table, title="证据清单", border_style="bright_black", box=box.ROUNDED))
+
+
+def _observation_headline(outcome: ResearchOutcome) -> str:
+    action = ACTION_LABELS.get(outcome.guidance.action, outcome.guidance.action)
+    if outcome.agent_run is not None:
+        return "{}；本轮未升级为完整报告。".format(outcome.agent_run.terminal_reason)
+    return "当前状态不满足强分析触发条件；建议{}。".format(action)
+
+
+def _stat(label: str, value: str, style: str = "bold cyan") -> Text:
+    text = Text()
+    text.append(label + "\n", style="dim")
+    text.append(value, style=style)
+    return text
+
+
+def _add_counts_row(table: Table, label: str, counts) -> None:
+    value = "  ·  ".join("{} {}".format(name, count) for name, count in counts.items()) if counts else "无"
+    table.add_row(label, value)
+
+
+def _priority_border(priority: str) -> str:
+    return {
+        "silent": "bright_black",
+        "watch": "yellow",
+        "significant": "bright_yellow",
+        "urgent": "red",
+    }.get(priority, "cyan")
 
 
 def _tool_detail(result) -> str:
     if result is None:
-        return ""
+        return "未返回结果"
     if not result.ok:
-        return result.error or ""
+        return result.error or "未知错误"
     data = result.data
     if isinstance(data, dict) and "count" in data:
-        return "{} 条".format(data["count"])
+        return "{} 条记录".format(data["count"])
     if isinstance(data, dict) and "created" in data:
-        return str(data.get("hypothesis_id", ""))
+        return str(data.get("hypothesis_id", "已创建"))
     if isinstance(data, dict) and "available" in data:
-        return "可用" if data["available"] else "缺失"
-    return ""
+        return "数据可用" if data["available"] else "数据缺失"
+    return "完成"
 
 
-def _print_counts(console: Console, title: str, counts) -> None:
-    if not counts:
-        return
-    console.print("[bold]{}[/bold]  {}".format(
-        title, " · ".join("{} {}".format(name, value) for name, value in counts.items())
-    ))
-
-
-def _print_judgment(console: Console, judgment: ContinuousJudgment) -> None:
-    console.print("[bold]Observer 判断[/bold]  {} / {}".format(judgment.provider, judgment.model_version))
-    console.print("  • 状态: {} (confidence {:.0%})".format(judgment.selected_value, judgment.confidence))
-    console.print("  • 分数类型: {}".format(judgment.score_kind))
-    console.print("  • 概率: {}".format(
-        " · ".join("{} {:.2f}".format(name, value) for name, value in judgment.probabilities.items())
-    ))
-    console.print("  • 研究优先级: {}".format(judgment.research_priority))
-    if judgment.contradicting_roles:
-        console.print("  • 冲突角色: {}".format(", ".join(judgment.contradicting_roles)))
-    if judgment.missing_roles:
-        console.print("  • 缺失数据: {}".format("、".join(judgment.missing_roles)))
-
-
-def _print_report(console: Console, report: MarketReport) -> None:
-    table = Table(show_header=False, box=None, padding=(0, 1))
-    table.add_row("数据时间", report.data_time)
-    table.add_row("数据来源", ", ".join(report.sources))
-    table.add_row("分析状态", "{} (confidence {:.0%})".format(report.state, report.confidence))
-    console.print(Panel(table, title=report.asset, border_style="cyan"))
-    metrics = report.metrics
-    console.print("[bold]关键指标[/bold]")
-    console.print("  • 价格变化 1h: {}".format(_format_percent(metrics.price_change_1h)))
-    console.print("  • 价格变化 6h: {}".format(_format_percent(metrics.price_change_6h)))
-    console.print("  • 现货成交量变化 1h: {}".format(_format_percent(metrics.spot_volume_change_1h)))
-    console.print("  • funding rate: {}".format(_format_percent(metrics.funding_rate, digits=4)))
-    console.print("  • open interest: {}".format(_format_number(metrics.open_interest)))
-    console.print("  • open interest 本轮变化: {}".format(_format_percent(metrics.open_interest_change_interval)))
-    console.print("  • open interest 变化 1h: {}".format(_format_percent(metrics.open_interest_change_1h)))
-    console.print("[bold]判断[/bold]  {}".format(report.headline))
-    _print_evidence(console, "支持证据", report.supporting_evidence, "green")
-    _print_evidence(console, "反向证据", report.contradicting_evidence, "yellow")
-    _print_evidence(console, "缺失数据", report.missing_evidence, "magenta")
-    console.print("[bold]失效条件[/bold]  {}\n".format(report.invalidation_condition))
-
-
-def _print_guidance(console: Console, guidance) -> None:
-    console.print("[bold]研究建议[/bold]  {}".format(guidance.action))
-    console.print("  • 研究重点: {}".format("、".join(guidance.focus)))
-    if guidance.factor_candidates:
-        console.print("  • 因子候选: {}".format("、".join(guidance.factor_candidates)))
-
-
-def _print_evidence(console: Console, title: str, items, color: str) -> None:
-    console.print("[bold {}]{}[/bold {}]".format(color, title, color))
-    for item in items:
-        console.print("  • {}".format(item))
+def _colored_percent(value, digits: int = 2) -> Text:
+    formatted = _format_percent(value, digits)
+    if value is None:
+        return Text(formatted, style="dim")
+    style = "green" if value > 0 else "red" if value < 0 else "white"
+    return Text(formatted, style=style)
 
 
 def _format_percent(value, digits: int = 2) -> str:
